@@ -24,6 +24,7 @@ import {
   SetupHello as SetupHelloBackend,
   UnlockWithHello,
   StoreHelloCredential,
+  GetHelloCredential,
   DisableHello,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
@@ -116,7 +117,7 @@ const filteredEntries = computed(() => {
     e.username.toLowerCase().includes(q) ||
     e.url.toLowerCase().includes(q) ||
     e.categoryName.toLowerCase().includes(q) ||
-    e.tags.some(t => t.name.toLowerCase().includes(q))
+    e.tags?.some(t => t.name.toLowerCase().includes(q))
   )
 })
 
@@ -160,7 +161,7 @@ function getInitial(title: string): string {
 }
 
 function getAvatarColor(entry: Entry): string {
-  if (entry.tags.length > 0) return entry.tags[0].color
+  if (entry.tags?.length > 0) return entry.tags[0].color
   return '#6366f1'
 }
 
@@ -170,8 +171,12 @@ onMounted(async () => {
   if (!initialized.value) {
     setupDialogVisible.value = true
   }
-  // DPAPI is always available on Windows
-  helloAvailable.value = true
+  // Check WebAuthn availability and Hello status
+  try {
+    if (window.PublicKeyCredential) {
+      helloAvailable.value = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+    }
+  } catch { /* not available */ }
   if (initialized.value) {
     helloEnabled.value = await IsHelloEnabled()
   }
@@ -526,18 +531,40 @@ async function registerHello() {
 
 async function handleHelloUnlock() {
   try {
-    const ok = await UnlockWithHello()
-    if (ok) {
-      unlocked.value = true
-      unlockDialogVisible.value = false
-      await loadAll()
-      helloEnabled.value = true
-      ElMessage.success('解锁成功')
-    } else {
-      ElMessage.error('快速解锁失败，请使用密码')
+    const credIdData = await GetHelloCredential()
+    if (!credIdData) {
+      ElMessage.warning('请先设置 Windows Hello')
+      return
+    }
+
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{
+          id: new Uint8Array(credIdData),
+          type: 'public-key',
+        }],
+        userVerification: 'required',
+        timeout: 60000,
+      },
+    }) as PublicKeyCredential
+
+    if (credential) {
+      const ok = await UnlockWithHello()
+      if (ok) {
+        unlocked.value = true
+        unlockDialogVisible.value = false
+        await loadAll()
+        helloEnabled.value = true
+        ElMessage.success('解锁成功')
+      } else {
+        ElMessage.error('Windows Hello 解锁失败，请使用密码')
+      }
     }
   } catch (e: any) {
-    ElMessage.error(e.message || '解锁失败')
+    if (e.name !== 'NotAllowedError') {
+      ElMessage.error(e.message || '验证失败')
+    }
   }
 }
 
@@ -720,7 +747,7 @@ function openUrl(url: string) {
                   <span class="entry-username">{{ entry.username }}</span>
                 </div>
               </div>
-              <div class="card-meta" v-if="entry.categoryName || entry.tags.length">
+              <div class="card-meta" v-if="entry.categoryName || entry.tags?.length">
                 <el-tag v-if="entry.categoryName" size="small" effect="plain" class="meta-tag">
                   <el-icon size="12"><Folder /></el-icon>
                   {{ entry.categoryName }}
