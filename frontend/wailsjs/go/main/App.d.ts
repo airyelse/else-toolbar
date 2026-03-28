@@ -20,6 +20,8 @@ export function GetCategoryTree():Promise<Array<models.CategoryDTO>>;
 
 export function GetEntries(arg1:any,arg2:any):Promise<Array<models.EntryDTO>>;
 
+export function GetHelloAvailability():Promise<string>;
+
 export function GetHelloCredential():Promise<Array<number>>;
 
 export function GetPassword(arg1:number):Promise<string>;
@@ -33,6 +35,8 @@ export function IsInitialized():Promise<boolean>;
 export function IsUnlocked():Promise<boolean>;
 
 export function Lock():Promise<void>;
+
+export function OpenWindowsHelloSettings():Promise<void>;
 
 export function SelectDirectory():Promise<string>;
 

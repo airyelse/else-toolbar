@@ -38,6 +38,10 @@ export function GetEntries(arg1, arg2) {
   return window['go']['main']['App']['GetEntries'](arg1, arg2);
 }
 
+export function GetHelloAvailability() {
+  return window['go']['main']['App']['GetHelloAvailability']();
+}
+
 export function GetHelloCredential() {
   return window['go']['main']['App']['GetHelloCredential']();
 }
@@ -64,6 +68,10 @@ export function IsUnlocked() {
 
 export function Lock() {
   return window['go']['main']['App']['Lock']();
+}
+
+export function OpenWindowsHelloSettings() {
+  return window['go']['main']['App']['OpenWindowsHelloSettings']();
 }
 
 export function SelectDirectory() {

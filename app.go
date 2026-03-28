@@ -3,6 +3,7 @@ package main
 import (
 	"else-toolbox/internal/crypto"
 	"else-toolbox/internal/database"
+	"else-toolbox/internal/hello"
 	"else-toolbox/internal/models"
 	"context"
 	"encoding/base64"
@@ -370,11 +371,27 @@ func (a *App) SetupHello() error {
 	if a.masterKey == nil {
 		return errors.New("vault is locked")
 	}
+	result, err := hello.RequestVerification("启用 Windows Hello 解锁")
+	if err != nil {
+		return err
+	}
+	if result != "Verified" {
+		return errors.New("windows hello verification was not completed")
+	}
 	encrypted, err := crypto.DPAPIEncrypt(a.masterKey)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(a.dataDir, ".hello_key"), encrypted, 0600)
+}
+
+// GetHelloAvailability checks current Windows Hello availability status.
+func (a *App) GetHelloAvailability() string {
+	result, err := hello.CheckAvailability()
+	if err != nil {
+		return "Unknown"
+	}
+	return result
 }
 
 // IsHelloEnabled checks if Windows Hello unlock is configured
@@ -401,26 +418,39 @@ func (a *App) GetHelloCredential() ([]byte, error) {
 }
 
 // UnlockWithHello decrypts the stored master key via DPAPI
-func (a *App) UnlockWithHello() bool {
+func (a *App) UnlockWithHello() (bool, error) {
+	result, err := hello.RequestVerification("使用 Windows Hello 解锁密码库")
+	if err != nil {
+		return false, err
+	}
+	if result != "Verified" {
+		return false, nil
+	}
+
 	data, err := os.ReadFile(filepath.Join(a.dataDir, ".hello_key"))
 	if err != nil {
-		return false
+		return false, err
 	}
 	key, err := crypto.DPAPIDecrypt(data)
 	if err != nil {
-		return false
+		return false, err
 	}
 	// Verify by decrypting the verifier
 	var mk models.MasterKey
 	if err := database.DB.First(&mk).Error; err != nil {
-		return false
+		return false, err
 	}
 	_, err = crypto.Decrypt(mk.Verifier, key)
 	if err != nil {
-		return false
+		return false, err
 	}
 	a.masterKey = key
-	return true
+	return true, nil
+}
+
+// OpenWindowsHelloSettings opens the Windows sign-in options page.
+func (a *App) OpenWindowsHelloSettings() error {
+	return hello.OpenSettings()
 }
 
 // ==================== Utility ====================

@@ -38,6 +38,12 @@ func Init(dataDir string) error {
 
 // migrateCategoryStrings 将 PasswordEntry 的旧 category 字符串字段迁移为 Category 记录
 func migrateCategoryStrings() {
+	// Newer databases no longer have the legacy `category` column.
+	// Skip the migration entirely in that case so startup stays quiet.
+	if !DB.Migrator().HasColumn(&models.PasswordEntry{}, "category") {
+		return
+	}
+
 	// 用原生 SQL 查询旧字段（因为模型已改，GORM 无法映射旧 string 字段）
 	type legacyRow struct {
 		ID       uint

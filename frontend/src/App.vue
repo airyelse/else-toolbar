@@ -20,12 +20,12 @@ import {
   CreateTag,
   UpdateTag,
   DeleteTag,
+  GetHelloAvailability,
   IsHelloEnabled,
   SetupHello as SetupHelloBackend,
   UnlockWithHello,
-  StoreHelloCredential,
-  GetHelloCredential,
   DisableHello,
+  OpenWindowsHelloSettings,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 
@@ -171,12 +171,8 @@ onMounted(async () => {
   if (!initialized.value) {
     setupDialogVisible.value = true
   }
-  // Check WebAuthn availability and Hello status
-  try {
-    if (window.PublicKeyCredential) {
-      helloAvailable.value = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    }
-  } catch { /* not available */ }
+  const availability = await GetHelloAvailability()
+  helloAvailable.value = availability !== 'DeviceNotPresent' && availability !== 'Unknown'
   if (initialized.value) {
     helloEnabled.value = await IsHelloEnabled()
   }
@@ -484,87 +480,60 @@ async function promptEnableHello() {
   } catch { /* user cancelled */ }
 }
 
+async function openHelloSettings() {
+  try {
+    await OpenWindowsHelloSettings()
+  } catch (e: any) {
+    ElMessage.error(e.message || '无法打开 Windows 登录选项')
+  }
+}
+
+async function offerOpenHelloSettings(message: string) {
+  try {
+    await ElMessageBox.confirm(message, 'Windows Hello', {
+      confirmButtonText: '打开设置',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
+    await openHelloSettings()
+  } catch { /* user cancelled */ }
+}
+
 async function registerHello() {
   try {
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    if (!available) {
+    const availability = await GetHelloAvailability()
+    helloAvailable.value = availability !== 'DeviceNotPresent' && availability !== 'Unknown'
+    if (!helloAvailable.value) {
       ElMessage.warning('此设备不支持 Windows Hello')
+      await offerOpenHelloSettings('当前设备未启用或暂时无法使用 Windows Hello，是否打开系统登录选项进行检查？')
       return false
     }
-
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rp: {
-          name: 'VaultBox',
-          id: window.location.hostname || 'localhost',
-        },
-        user: {
-          id: crypto.getRandomValues(new Uint8Array(16)),
-          name: 'vaultbox-user',
-          displayName: 'VaultBox User',
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: 'public-key' },
-          { alg: -257, type: 'public-key' },
-        ],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
-        },
-        timeout: 60000,
-      },
-    }) as PublicKeyCredential
-
-    const credId = Array.from(new Uint8Array(credential.rawId))
-    await StoreHelloCredential(credId)
     await SetupHelloBackend()
     helloEnabled.value = true
     return true
   } catch (e: any) {
-    if (e.name !== 'NotAllowedError') {
-      ElMessage.error(e.message || '注册失败')
-    }
+    ElMessage.error(e.message || '注册失败')
+    await offerOpenHelloSettings('当前窗口未能直接拉起 Windows Hello，是否打开系统登录选项？')
     return false
   }
 }
 
 async function handleHelloUnlock() {
   try {
-    const credIdData = await GetHelloCredential()
-    if (!credIdData) {
-      ElMessage.warning('请先设置 Windows Hello')
-      return
-    }
-
-    const credential = await navigator.credentials.get({
-      publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{
-          id: new Uint8Array(credIdData),
-          type: 'public-key',
-        }],
-        userVerification: 'required',
-        timeout: 60000,
-      },
-    }) as PublicKeyCredential
-
-    if (credential) {
-      const ok = await UnlockWithHello()
-      if (ok) {
-        unlocked.value = true
-        unlockDialogVisible.value = false
-        await loadAll()
-        helloEnabled.value = true
-        ElMessage.success('解锁成功')
-      } else {
-        ElMessage.error('Windows Hello 解锁失败，请使用密码')
-      }
+    const ok = await UnlockWithHello()
+    if (ok) {
+      unlocked.value = true
+      unlockDialogVisible.value = false
+      await loadAll()
+      helloEnabled.value = true
+      ElMessage.success('解锁成功')
+    } else {
+      ElMessage.error('Windows Hello 解锁失败，请使用密码')
+      await offerOpenHelloSettings('当前窗口未能完成 Windows Hello 验证，是否打开系统登录选项？')
     }
   } catch (e: any) {
-    if (e.name !== 'NotAllowedError') {
-      ElMessage.error(e.message || '验证失败')
-    }
+    ElMessage.error(e.message || '验证失败')
+    await offerOpenHelloSettings('当前窗口未能直接拉起 Windows Hello，是否打开系统登录选项？')
   }
 }
 
@@ -854,6 +823,9 @@ function openUrl(url: string) {
         <el-divider>或</el-divider>
         <el-button size="large" style="width: 100%" @click="handleHelloUnlock">
           <el-icon><Key /></el-icon><span>使用 Windows Hello 解锁</span>
+        </el-button>
+        <el-button text size="large" style="width: 100%; margin-top: 8px" @click="openHelloSettings">
+          打开 Windows Hello 设置
         </el-button>
       </div>
     </el-dialog>
