@@ -1,5 +1,27 @@
+# Build output
 build/bin
 bin/
+*.exe
+*.dll
+*.pdb
+
+# Build cache
 .task/
+frontend/package.json.md5
+
+# Dependencies
 node_modules
 frontend/dist
+
+# Editor / IDE
+.claude/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.out
