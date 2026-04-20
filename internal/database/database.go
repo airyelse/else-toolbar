@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"else-toolbox/internal/models"
 	"path/filepath"
 
@@ -44,18 +45,28 @@ func migrateCategoryStrings() {
 		return
 	}
 
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return
+	}
+
 	// 用原生 SQL 查询旧字段（因为模型已改，GORM 无法映射旧 string 字段）
 	type legacyRow struct {
 		ID       uint
 		Category string
 	}
 	var rows []legacyRow
-	if err := DB.Raw("SELECT id, category FROM password_entries WHERE category != ''").Scan(&rows).Error; err != nil {
+	if err := tx.Raw("SELECT id, category FROM password_entries WHERE category != ''").Scan(&rows).Error; err != nil {
+		tx.Rollback()
 		return
 	}
 	if len(rows) == 0 {
 		// 旧字段没有数据，直接删除
-		DB.Migrator().DropColumn(&models.PasswordEntry{}, "category")
+		if err := tx.Migrator().DropColumn(&models.PasswordEntry{}, "category"); err != nil {
+			tx.Rollback()
+			return
+		}
+		tx.Commit()
 		return
 	}
 
@@ -63,21 +74,38 @@ func migrateCategoryStrings() {
 	for _, row := range rows {
 		if _, ok := categoryMap[row.Category]; !ok {
 			var cat models.Category
-			result := DB.Where("name = ?", row.Category).First(&cat)
+			result := tx.Where("name = ?", row.Category).First(&cat)
+			if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				tx.Rollback()
+				return
+			}
 			if result.RowsAffected == 0 {
 				cat = models.Category{Name: row.Category, Order: len(categoryMap)}
-				DB.Create(&cat)
+				if err := tx.Create(&cat).Error; err != nil {
+					tx.Rollback()
+					return
+				}
 			}
 			categoryMap[row.Category] = cat.ID
 		}
-		DB.Exec("UPDATE password_entries SET category_id = ? WHERE id = ?", categoryMap[row.Category], row.ID)
+		if err := tx.Exec("UPDATE password_entries SET category_id = ? WHERE id = ?", categoryMap[row.Category], row.ID).Error; err != nil {
+			tx.Rollback()
+			return
+		}
 	}
 
-	DB.Migrator().DropColumn(&models.PasswordEntry{}, "category")
+	if err := tx.Migrator().DropColumn(&models.PasswordEntry{}, "category"); err != nil {
+		tx.Rollback()
+		return
+	}
+	tx.Commit()
 }
 
 // Close 关闭数据库
 func Close() error {
+	if DB == nil {
+		return nil
+	}
 	sqlDB, err := DB.DB()
 	if err != nil {
 		return err
