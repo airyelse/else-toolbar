@@ -1,7 +1,6 @@
 package database
 
 import (
-	"errors"
 	"else-toolbox/internal/models"
 	"path/filepath"
 
@@ -39,14 +38,7 @@ func Init(dataDir string) error {
 
 // migrateCategoryStrings 将 PasswordEntry 的旧 category 字符串字段迁移为 Category 记录
 func migrateCategoryStrings() {
-	// Newer databases no longer have the legacy `category` column.
-	// Skip the migration entirely in that case so startup stays quiet.
 	if !DB.Migrator().HasColumn(&models.PasswordEntry{}, "category") {
-		return
-	}
-
-	tx := DB.Begin()
-	if tx.Error != nil {
 		return
 	}
 
@@ -56,17 +48,12 @@ func migrateCategoryStrings() {
 		Category string
 	}
 	var rows []legacyRow
-	if err := tx.Raw("SELECT id, category FROM password_entries WHERE category != ''").Scan(&rows).Error; err != nil {
-		tx.Rollback()
+	if err := DB.Raw("SELECT id, category FROM password_entries WHERE category != ''").Scan(&rows).Error; err != nil {
 		return
 	}
 	if len(rows) == 0 {
 		// 旧字段没有数据，直接删除
-		if err := tx.Migrator().DropColumn(&models.PasswordEntry{}, "category"); err != nil {
-			tx.Rollback()
-			return
-		}
-		tx.Commit()
+		DB.Migrator().DropColumn(&models.PasswordEntry{}, "category")
 		return
 	}
 
@@ -74,38 +61,21 @@ func migrateCategoryStrings() {
 	for _, row := range rows {
 		if _, ok := categoryMap[row.Category]; !ok {
 			var cat models.Category
-			result := tx.Where("name = ?", row.Category).First(&cat)
-			if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				tx.Rollback()
-				return
-			}
+			result := DB.Where("name = ?", row.Category).First(&cat)
 			if result.RowsAffected == 0 {
 				cat = models.Category{Name: row.Category, Order: len(categoryMap)}
-				if err := tx.Create(&cat).Error; err != nil {
-					tx.Rollback()
-					return
-				}
+				DB.Create(&cat)
 			}
 			categoryMap[row.Category] = cat.ID
 		}
-		if err := tx.Exec("UPDATE password_entries SET category_id = ? WHERE id = ?", categoryMap[row.Category], row.ID).Error; err != nil {
-			tx.Rollback()
-			return
-		}
+		DB.Exec("UPDATE password_entries SET category_id = ? WHERE id = ?", categoryMap[row.Category], row.ID)
 	}
 
-	if err := tx.Migrator().DropColumn(&models.PasswordEntry{}, "category"); err != nil {
-		tx.Rollback()
-		return
-	}
-	tx.Commit()
+	DB.Migrator().DropColumn(&models.PasswordEntry{}, "category")
 }
 
 // Close 关闭数据库
 func Close() error {
-	if DB == nil {
-		return nil
-	}
 	sqlDB, err := DB.DB()
 	if err != nil {
 		return err

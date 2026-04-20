@@ -47,6 +47,11 @@ import {
   SetRuntimeConfig,
   FetchAvailableVersions,
   SelectDirectory as SelectDirDialog,
+  GetOpenCodeConfig,
+  SaveOpenCodeConfig as SaveOpenCodeConfigBackend,
+  GetOpenCodeConfigPath,
+  FetchAvailableModels,
+  ForceRefreshModels,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -85,7 +90,7 @@ interface PathEntryItem {
 }
 
 // ==================== Navigation ====================
-type Tool = 'vault' | 'env' | 'runtime'
+type Tool = 'vault' | 'env' | 'runtime' | 'opencode'
 const currentTool = ref<Tool>('vault')
 
 // ==================== Vault State ====================
@@ -731,6 +736,258 @@ function getAvatarColor(entry: Entry): string {
   return '#6366f1'
 }
 
+// ==================== OpenCode Config State ====================
+interface AgentConfigItem {
+  model: string
+  variant: string
+  skills: string[]
+  mcps: string[]
+}
+
+interface PresetItem {
+  [agentName: string]: AgentConfigItem | undefined
+  orchestrator?: AgentConfigItem
+  oracle?: AgentConfigItem
+  librarian?: AgentConfigItem
+  explorer?: AgentConfigItem
+  designer?: AgentConfigItem
+  fixer?: AgentConfigItem
+}
+
+interface OpenCodeConfig {
+  preset: string
+  presets: Record<string, PresetItem>
+}
+
+const ocConfig = ref<OpenCodeConfig | null>(null)
+const ocConfigPath = ref('')
+const ocLoading = ref(false)
+const ocDirty = ref(false)
+const ocAvailableModels = ref<string[]>([])
+const ocModelsLoading = ref(false)
+
+// Agent edit dialog
+const ocAgentDialogVisible = ref(false)
+const ocEditAgentName = ref('')
+const ocEditPresetName = ref('')
+const ocEditForm = ref<AgentConfigItem>({ model: '', variant: '', skills: [], mcps: [] })
+const ocEditSkillsInput = ref('')
+const ocEditMcpsInput = ref('')
+
+// New preset dialog
+const ocNewPresetDialogVisible = ref(false)
+const ocNewPresetName = ref('')
+
+// Agent metadata (static)
+const ocAgentNames = ['orchestrator', 'oracle', 'librarian', 'explorer', 'designer', 'fixer']
+const ocAgentLabels: Record<string, string> = {
+  orchestrator: 'Orchestrator (主编排)',
+  oracle: 'Oracle (架构师)',
+  librarian: 'Librarian (文档研究员)',
+  explorer: 'Explorer (代码搜索)',
+  designer: 'Designer (UI 设计)',
+  fixer: 'Fixer (快速实现)',
+}
+const ocAgentColors: Record<string, string> = {
+  orchestrator: '#6366f1',
+  oracle: '#f59e0b',
+  librarian: '#10b981',
+  explorer: '#06b6d4',
+  designer: '#ec4899',
+  fixer: '#64748b',
+}
+
+function ocModelToString(model: any): string {
+  if (!model) return ''
+  if (typeof model === 'string') return model
+  if (Array.isArray(model)) return model.join(', ')
+  return String(model)
+}
+
+function ocStringToModel(s: string): any {
+  if (!s) return ''
+  const trimmed = s.trim()
+  if (trimmed.startsWith('[')) {
+    try { return JSON.parse(trimmed) } catch { return trimmed }
+  }
+  return trimmed
+}
+
+async function loadOpenCodeConfig() {
+  ocLoading.value = true
+  try {
+    const cfg = await GetOpenCodeConfig()
+    if (!cfg) {
+      ocConfig.value = null
+      return
+    }
+    const path = await GetOpenCodeConfigPath()
+    ocConfigPath.value = path || ''
+
+    // Normalize presets: convert AgentConfig objects to plain AgentConfigItem
+    const presets: Record<string, PresetItem> = {}
+    for (const [name, preset] of Object.entries(cfg.presets || {})) {
+      const p: PresetItem = {}
+      if (preset) {
+        for (const agentName of ocAgentNames) {
+          const agent = (preset as any)[agentName]
+          if (agent) {
+            p[agentName] = {
+              model: ocModelToString(agent.model),
+              variant: agent.variant || '',
+              skills: agent.skills || [],
+              mcps: agent.mcps || [],
+            }
+          }
+        }
+      }
+      presets[name] = p
+    }
+
+    ocConfig.value = { preset: cfg.preset, presets }
+    ocDirty.value = false
+  } catch (e: any) {
+    ElMessage.error(e.message || '加载 OpenCode 配置失败')
+  }
+  ocLoading.value = false
+
+  // 加载可用模型列表
+  loadAvailableModels()
+}
+
+async function loadAvailableModels() {
+  ocModelsLoading.value = true
+  try {
+    ocAvailableModels.value = await FetchAvailableModels() || []
+  } catch { /* ignore - models are optional */ }
+  ocModelsLoading.value = false
+}
+
+async function handleRefreshModels() {
+  ocModelsLoading.value = true
+  try {
+    ocAvailableModels.value = await ForceRefreshModels() || []
+    ElMessage.success('模型列表已更新')
+  } catch (e: any) {
+    ElMessage.error(e.message || '更新模型列表失败')
+  }
+  ocModelsLoading.value = false
+}
+
+async function saveOpenCodeConfig() {
+  if (!ocConfig.value) return
+  try {
+    // Convert back to Go-compatible structure
+    const presets: Record<string, any> = {}
+    for (const [name, preset] of Object.entries(ocConfig.value.presets)) {
+      const p: any = {}
+      for (const agentName of ocAgentNames) {
+        const agent = preset[agentName]
+        if (agent) {
+          p[agentName] = {
+            model: ocStringToModel(agent.model),
+            variant: agent.variant || undefined,
+            skills: agent.skills.length > 0 ? agent.skills : undefined,
+            mcps: agent.mcps.length > 0 ? agent.mcps : undefined,
+          }
+        }
+      }
+      presets[name] = p
+    }
+
+    await SaveOpenCodeConfigBackend({
+      preset: ocConfig.value.preset,
+      presets,
+    } as any)
+    ocDirty.value = false
+    ElMessage.success('配置已保存')
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+function ocSwitchPreset(name: string) {
+  if (!ocConfig.value) return
+  ocConfig.value.preset = name
+  ocDirty.value = true
+}
+
+function ocOpenAgentEdit(agentName: string) {
+  if (!ocConfig.value) return
+  const preset = ocConfig.value.presets[ocConfig.value.preset]
+  ocEditAgentName.value = agentName
+  ocEditPresetName.value = ocConfig.value.preset
+  const existing = preset?.[agentName]
+  if (existing) {
+    ocEditForm.value = { ...existing }
+    ocEditSkillsInput.value = existing.skills.join(', ')
+    ocEditMcpsInput.value = existing.mcps.join(', ')
+  } else {
+    ocEditForm.value = { model: '', variant: '', skills: [], mcps: [] }
+    ocEditSkillsInput.value = ''
+    ocEditMcpsInput.value = ''
+  }
+  ocAgentDialogVisible.value = true
+}
+
+function ocSaveAgentEdit() {
+  if (!ocConfig.value) return
+  const skills = ocEditSkillsInput.value.split(',').map(s => s.trim()).filter(Boolean)
+  const mcps = ocEditMcpsInput.value.split(',').map(s => s.trim()).filter(Boolean)
+  const preset = ocConfig.value.presets[ocConfig.value.preset]
+  if (!preset) return
+  preset[ocEditAgentName.value] = {
+    model: ocEditForm.value.model,
+    variant: ocEditForm.value.variant,
+    skills,
+    mcps,
+  }
+  ocDirty.value = true
+  ocAgentDialogVisible.value = false
+}
+
+function ocOpenNewPreset() {
+  ocNewPresetName.value = ''
+  ocNewPresetDialogVisible.value = true
+}
+
+function ocCreatePreset() {
+  if (!ocConfig.value || !ocNewPresetName.value.trim()) {
+    ElMessage.warning('请输入预设名称')
+    return
+  }
+  const name = ocNewPresetName.value.trim()
+  if (ocConfig.value.presets[name]) {
+    ElMessage.warning('预设已存在')
+    return
+  }
+  ocConfig.value.presets[name] = {}
+  ocNewPresetDialogVisible.value = false
+  ocDirty.value = true
+  ElMessage.success('预设已创建')
+}
+
+async function ocDeletePreset(name: string) {
+  if (!ocConfig.value) return
+  if (name === ocConfig.value.preset) {
+    ElMessage.warning('不能删除当前活跃预设')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除预设「${name}」？`, '删除预设', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+    delete ocConfig.value.presets[name]
+    ocDirty.value = true
+    ElMessage.success('已删除')
+  } catch { /* cancel */ }
+}
+
+function ocGetActivePreset(): PresetItem | null {
+  if (!ocConfig.value) return null
+  return ocConfig.value.presets[ocConfig.value.preset] || null
+}
+
 // ==================== Init ====================
 let unlistenProgress: (() => void) | null = null
 
@@ -1215,6 +1472,15 @@ function openUrl(url: string) {
             <el-icon size="20"><Monitor /></el-icon>
           </div>
         </el-tooltip>
+        <el-tooltip content="OpenCode 配置" placement="right">
+          <div
+            class="nav-rail-item"
+            :class="{ active: currentTool === 'opencode' }"
+            @click="currentTool = 'opencode'; loadOpenCodeConfig()"
+          >
+            <el-icon size="20"><Setting /></el-icon>
+          </div>
+        </el-tooltip>
       </div>
     </nav>
 
@@ -1223,7 +1489,7 @@ function openUrl(url: string) {
       <!-- Header -->
       <header class="header">
         <div class="header-left">
-          <h1 class="header-title">{{ currentTool === 'vault' ? '密码保险箱' : currentTool === 'env' ? '环境变量' : '环境管理' }}</h1>
+          <h1 class="header-title">{{ currentTool === 'vault' ? '密码保险箱' : currentTool === 'env' ? '环境变量' : currentTool === 'opencode' ? 'OpenCode 配置' : '环境管理' }}</h1>
         </div>
         <div class="header-actions" v-if="currentTool === 'vault' && unlocked">
           <el-input v-model="searchQuery" placeholder="搜索..." clearable class="search-input">
@@ -1257,6 +1523,17 @@ function openUrl(url: string) {
           </el-input>
           <el-button type="primary" @click="loadEnvVars" class="btn-add">
             <el-icon><Refresh /></el-icon><span>刷新</span>
+          </el-button>
+        </div>
+        <div class="header-actions" v-if="currentTool === 'opencode'">
+          <el-button @click="handleRefreshModels" :loading="ocModelsLoading" class="btn-add">
+            <el-icon><Refresh /></el-icon><span>更新模型</span>
+          </el-button>
+          <el-button @click="loadOpenCodeConfig" class="btn-add">
+            <el-icon><RefreshRight /></el-icon><span>刷新配置</span>
+          </el-button>
+          <el-button type="primary" @click="saveOpenCodeConfig" :disabled="!ocDirty" class="btn-add">
+            <el-icon><Check /></el-icon><span>保存</span>
           </el-button>
         </div>
       </header>
@@ -1920,6 +2197,195 @@ function openUrl(url: string) {
         <div style="display: flex; gap: 12px; width: 100%">
           <el-button size="large" @click="configDialogVisible = false" style="flex: 1">取消</el-button>
           <el-button type="primary" size="large" @click="handleSaveConfig" style="flex: 1">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- ==================== OPENCODE TOOL ==================== -->
+    <template v-if="currentTool === 'opencode'">
+      <div class="body" v-loading="ocLoading">
+        <main class="main-content" style="flex: 1">
+          <template v-if="ocConfig">
+            <!-- Config path info -->
+            <div class="oc-info-bar">
+              <span class="oc-info-path">
+                <el-icon size="13"><Document /></el-icon>
+                {{ ocConfigPath }}
+              </span>
+              <el-tag v-if="ocDirty" type="warning" size="small" effect="plain" style="margin-left: 8px">未保存</el-tag>
+            </div>
+
+            <!-- Preset selector -->
+            <div class="oc-section">
+              <div class="content-header">
+                <h2 class="content-title">活跃预设</h2>
+                <el-button size="small" text @click="ocOpenNewPreset">
+                  <el-icon><Plus /></el-icon><span>新建预设</span>
+                </el-button>
+              </div>
+              <div class="oc-preset-list">
+                <div
+                  v-for="(preset, name) in ocConfig.presets"
+                  :key="name"
+                  class="oc-preset-item"
+                  :class="{ active: ocConfig.preset === name }"
+                  @click="ocSwitchPreset(name as string)"
+                >
+                  <div class="oc-preset-radio">
+                    <div class="oc-preset-dot" :class="{ active: ocConfig.preset === name }"></div>
+                  </div>
+                  <span class="oc-preset-name">{{ name }}</span>
+                  <span class="oc-preset-count">{{ Object.keys(preset).length }} 个 Agent</span>
+                  <el-icon
+                    v-if="ocConfig.preset !== name"
+                    size="14"
+                    class="oc-preset-delete"
+                    @click.stop="ocDeletePreset(name as string)"
+                  >
+                    <Delete />
+                  </el-icon>
+                </div>
+              </div>
+            </div>
+
+            <!-- Agent cards -->
+            <div class="oc-section">
+              <div class="content-header">
+                <h2 class="content-title">Agent 配置 — {{ ocConfig.preset }}</h2>
+              </div>
+              <div class="oc-agent-grid">
+                <div
+                  v-for="agentName in ocAgentNames"
+                  :key="agentName"
+                  class="oc-agent-card"
+                >
+                  <div class="oc-agent-header">
+                    <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName] }">
+                      {{ ocAgentLabels[agentName].charAt(0) }}
+                    </div>
+                    <div class="oc-agent-info">
+                      <div class="oc-agent-name">{{ ocAgentLabels[agentName] }}</div>
+                      <div class="oc-agent-model" v-if="ocGetActivePreset()?.[agentName]?.model">
+                        {{ ocGetActivePreset()?.[agentName]?.model }}
+                      </div>
+                      <div class="oc-agent-model oc-agent-empty" v-else>未配置</div>
+                    </div>
+                    <el-button text size="small" @click="ocOpenAgentEdit(agentName)" class="oc-agent-edit-btn">
+                      <el-icon><Edit /></el-icon>
+                    </el-button>
+                  </div>
+                  <div class="oc-agent-meta" v-if="ocGetActivePreset()?.[agentName]">
+                    <el-tag
+                      v-if="ocGetActivePreset()?.[agentName]?.variant"
+                      size="small"
+                      effect="plain"
+                      class="meta-tag"
+                    >
+                      {{ ocGetActivePreset()?.[agentName]?.variant }}
+                    </el-tag>
+                    <el-tag
+                      v-if="ocGetActivePreset()?.[agentName]?.skills?.length"
+                      size="small"
+                      type="success"
+                      effect="plain"
+                      class="meta-tag"
+                    >
+                      Skills: {{ ocGetActivePreset()?.[agentName]?.skills?.join(', ') }}
+                    </el-tag>
+                    <el-tag
+                      v-if="ocGetActivePreset()?.[agentName]?.mcps?.length"
+                      size="small"
+                      type="warning"
+                      effect="plain"
+                      class="meta-tag"
+                    >
+                      MCPs: {{ ocGetActivePreset()?.[agentName]?.mcps?.join(', ') }}
+                    </el-tag>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <div class="empty-state" v-else-if="!ocLoading">
+            <div class="empty-icon"><el-icon size="48"><Document /></el-icon></div>
+            <h3 class="empty-title">未找到配置文件</h3>
+            <p class="empty-desc">oh-my-opencode-slim.json 不存在于默认路径</p>
+          </div>
+        </main>
+      </div>
+    </template>
+
+    <!-- OpenCode Agent Edit Dialog -->
+    <el-dialog
+      v-model="ocAgentDialogVisible"
+      :title="`编辑 ${ocAgentLabels[ocEditAgentName]}`"
+      width="520px"
+      align-center
+    >
+      <el-form label-position="top">
+        <el-form-item label="模型 (Model)">
+          <el-select
+            v-model="ocEditForm.model"
+            filterable
+            placeholder="选择模型"
+            size="large"
+            style="width: 100%"
+            :loading="ocModelsLoading"
+          >
+            <el-option
+              v-for="m in ocAvailableModels"
+              :key="m"
+              :label="m"
+              :value="m"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Variant">
+          <el-select v-model="ocEditForm.variant" placeholder="选择 Variant" size="large" clearable style="width: 100%">
+            <el-option label="high" value="high" />
+            <el-option label="medium" value="medium" />
+            <el-option label="low" value="low" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Skills">
+          <el-input
+            v-model="ocEditSkillsInput"
+            placeholder="用逗号分隔，如: simplify, cartography 或 *"
+            size="large"
+          />
+        </el-form-item>
+        <el-form-item label="MCPs">
+          <el-input
+            v-model="ocEditMcpsInput"
+            placeholder="用逗号分隔，如: *, !context7"
+            size="large"
+          />
+          <div class="form-hint">* 表示全部，!name 表示排除</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocAgentDialogVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="ocSaveAgentEdit" style="flex: 1">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- OpenCode New Preset Dialog -->
+    <el-dialog v-model="ocNewPresetDialogVisible" title="新建预设" width="400px" align-center>
+      <el-form label-position="top">
+        <el-form-item label="预设名称" required>
+          <el-input v-model="ocNewPresetName" placeholder="输入预设名称" size="large" @keyup.enter="ocCreatePreset" />
+        </el-form-item>
+      </el-form>
+      <div class="dialog-desc">
+        新预设将创建空的 Agent 配置，你可以逐个添加。
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocNewPresetDialogVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="ocCreatePreset" style="flex: 1">创建</el-button>
         </div>
       </template>
     </el-dialog>
@@ -3239,4 +3705,190 @@ function openUrl(url: string) {
 .card-leave-active { transition: all 0.2s ease; }
 .card-enter-from { opacity: 0; transform: translateY(12px); }
 .card-leave-to { opacity: 0; transform: scale(0.95); }
+
+/* ===== OpenCode Config ===== */
+.oc-info-bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.oc-info-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-section {
+  margin-bottom: 24px;
+}
+
+/* Preset list */
+.oc-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.oc-preset-item:hover {
+  background: var(--bg);
+}
+
+.oc-preset-item.active {
+  background: var(--primary-bg);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.oc-preset-radio {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.oc-preset-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: all 0.15s;
+}
+
+.oc-preset-dot.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+.oc-preset-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.oc-preset-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.oc-preset-delete {
+  display: none;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.oc-preset-item:hover .oc-preset-delete {
+  display: block;
+}
+
+.oc-preset-delete:hover {
+  color: var(--danger) !important;
+}
+
+/* Agent grid */
+.oc-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.oc-agent-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 16px;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oc-agent-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(99, 102, 241, 0.2);
+  transform: translateY(-1px);
+}
+
+.oc-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.oc-agent-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.oc-agent-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-agent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.oc-agent-model {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  margin-top: 2px;
+}
+
+.oc-agent-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.oc-agent-edit-btn {
+  flex-shrink: 0;
+}
+
+.oc-agent-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 50px;
+}
+
+/* Form hint */
+.form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 </style>

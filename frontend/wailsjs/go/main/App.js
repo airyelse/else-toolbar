@@ -46,8 +46,16 @@ export function ExpandEnvValue(arg1) {
   return window['go']['main']['App']['ExpandEnvValue'](arg1);
 }
 
+export function FetchAvailableModels() {
+  return window['go']['main']['App']['FetchAvailableModels']();
+}
+
 export function FetchAvailableVersions(arg1, arg2) {
   return window['go']['main']['App']['FetchAvailableVersions'](arg1, arg2);
+}
+
+export function ForceRefreshModels() {
+  return window['go']['main']['App']['ForceRefreshModels']();
 }
 
 export function GetCategoryTree() {
@@ -68,6 +76,26 @@ export function GetHelloAvailability() {
 
 export function GetHelloCredential() {
   return window['go']['main']['App']['GetHelloCredential']();
+}
+
+export function GetOpenCodeAgentColors() {
+  return window['go']['main']['App']['GetOpenCodeAgentColors']();
+}
+
+export function GetOpenCodeAgentLabels() {
+  return window['go']['main']['App']['GetOpenCodeAgentLabels']();
+}
+
+export function GetOpenCodeAgentNames() {
+  return window['go']['main']['App']['GetOpenCodeAgentNames']();
+}
+
+export function GetOpenCodeConfig() {
+  return window['go']['main']['App']['GetOpenCodeConfig']();
+}
+
+export function GetOpenCodeConfigPath() {
+  return window['go']['main']['App']['GetOpenCodeConfigPath']();
 }
 
 export function GetPassword(arg1) {
@@ -132,6 +160,10 @@ export function OpenWindowsHelloSettings() {
 
 export function RenamePathProfile(arg1, arg2) {
   return window['go']['main']['App']['RenamePathProfile'](arg1, arg2);
+}
+
+export function SaveOpenCodeConfig(arg1) {
+  return window['go']['main']['App']['SaveOpenCodeConfig'](arg1);
 }
 
 export function SavePathEntries(arg1) {

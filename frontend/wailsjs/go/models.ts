@@ -160,6 +160,105 @@ export namespace models {
 
 }
 
+export namespace opencode {
+	
+	export class AgentConfig {
+	    model: any;
+	    variant?: string;
+	    skills?: string[];
+	    mcps?: string[];
+	    temperature?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.model = source["model"];
+	        this.variant = source["variant"];
+	        this.skills = source["skills"];
+	        this.mcps = source["mcps"];
+	        this.temperature = source["temperature"];
+	    }
+	}
+	export class Preset {
+	    orchestrator?: AgentConfig;
+	    oracle?: AgentConfig;
+	    librarian?: AgentConfig;
+	    explorer?: AgentConfig;
+	    designer?: AgentConfig;
+	    fixer?: AgentConfig;
+	
+	    static createFrom(source: any = {}) {
+	        return new Preset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.orchestrator = this.convertValues(source["orchestrator"], AgentConfig);
+	        this.oracle = this.convertValues(source["oracle"], AgentConfig);
+	        this.librarian = this.convertValues(source["librarian"], AgentConfig);
+	        this.explorer = this.convertValues(source["explorer"], AgentConfig);
+	        this.designer = this.convertValues(source["designer"], AgentConfig);
+	        this.fixer = this.convertValues(source["fixer"], AgentConfig);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Config {
+	    $schema?: string;
+	    preset: string;
+	    presets?: Record<string, Preset>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Config(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.$schema = source["$schema"];
+	        this.preset = source["preset"];
+	        this.presets = this.convertValues(source["presets"], Preset, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace pathenv {
 	
 	export class PathEntry {

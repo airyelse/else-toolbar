@@ -6,6 +6,7 @@ import (
 	"else-toolbox/internal/envvars"
 	"else-toolbox/internal/pathenv"
 	"else-toolbox/internal/runtime"
+	"else-toolbox/internal/opencode"
 	"else-toolbox/internal/shell"
 	"else-toolbox/internal/vault"
 	"errors"
@@ -37,6 +38,7 @@ func (a *App) startup(ctx context.Context) {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
 	a.Vault = vault.New(a.dataDir)
+	opencode.InitModelCache(a.dataDir)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -155,4 +157,38 @@ func (a *App) SelectDirectory() (string, error) {
 	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
 		Title: "选择目录",
 	})
+}
+
+// ==================== OpenCode Config ====================
+
+func (a *App) GetOpenCodeConfig() (*opencode.Config, error) {
+	return opencode.ReadConfig()
+}
+
+func (a *App) SaveOpenCodeConfig(cfg *opencode.Config) error {
+	return opencode.SaveConfig(cfg)
+}
+
+func (a *App) GetOpenCodeAgentNames() []string {
+	return opencode.AgentNames
+}
+
+func (a *App) GetOpenCodeAgentLabels() map[string]string {
+	return opencode.AgentLabels
+}
+
+func (a *App) GetOpenCodeAgentColors() map[string]string {
+	return opencode.AgentColors
+}
+
+func (a *App) GetOpenCodeConfigPath() (string, error) {
+	return opencode.ConfigPath()
+}
+
+func (a *App) FetchAvailableModels() ([]string, error) {
+	return opencode.FetchAvailableModels()
+}
+
+func (a *App) ForceRefreshModels() ([]string, error) {
+	return opencode.ForceRefreshModels()
 }
