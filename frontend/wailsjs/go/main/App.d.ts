@@ -84,6 +84,8 @@ export function OpenInExplorer(arg1:string):Promise<void>;
 
 export function OpenWindowsHelloSettings():Promise<void>;
 
+export function RenameOpenCodePreset(arg1:string,arg2:string):Promise<void>;
+
 export function RenamePathProfile(arg1:string,arg2:string):Promise<void>;
 
 export function SaveOpenCodeConfig(arg1:opencode.Config):Promise<void>;

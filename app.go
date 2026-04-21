@@ -192,3 +192,14 @@ func (a *App) FetchAvailableModels() ([]string, error) {
 func (a *App) ForceRefreshModels() ([]string, error) {
 	return opencode.ForceRefreshModels()
 }
+
+func (a *App) RenameOpenCodePreset(oldName, newName string) error {
+	cfg, err := opencode.ReadConfig()
+	if err != nil {
+		return err
+	}
+	if err := cfg.RenamePreset(oldName, newName); err != nil {
+		return err
+	}
+	return opencode.SaveConfig(cfg)
+}

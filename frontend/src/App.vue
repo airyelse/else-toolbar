@@ -52,6 +52,7 @@ import {
   GetOpenCodeConfigPath,
   FetchAvailableModels,
   ForceRefreshModels,
+  RenameOpenCodePreset,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -778,6 +779,11 @@ const ocEditMcpsInput = ref('')
 const ocNewPresetDialogVisible = ref(false)
 const ocNewPresetName = ref('')
 
+// Rename preset dialog
+const ocRenamePresetDialogVisible = ref(false)
+const ocRenameOldName = ref('')
+const ocRenameNewName = ref('')
+
 // Agent metadata (static)
 const ocAgentNames = ['orchestrator', 'oracle', 'librarian', 'explorer', 'designer', 'fixer']
 const ocAgentLabels: Record<string, string> = {
@@ -981,6 +987,44 @@ async function ocDeletePreset(name: string) {
     ocDirty.value = true
     ElMessage.success('已删除')
   } catch { /* cancel */ }
+}
+
+function ocOpenRenamePreset(name: string) {
+  ocRenameOldName.value = name
+  ocRenameNewName.value = name
+  ocRenamePresetDialogVisible.value = true
+}
+
+async function ocRenamePreset() {
+  if (!ocConfig.value) return
+  const newName = ocRenameNewName.value.trim()
+  if (!newName) {
+    ElMessage.warning('请输入预设名称')
+    return
+  }
+  if (newName === ocRenameOldName.value) {
+    ocRenamePresetDialogVisible.value = false
+    return
+  }
+  if (ocConfig.value.presets[newName] && newName !== ocRenameOldName.value) {
+    ElMessage.warning('预设名称已存在')
+    return
+  }
+  try {
+    await RenameOpenCodePreset(ocRenameOldName.value, newName)
+    // Update local state
+    const presetData = ocConfig.value.presets[ocRenameOldName.value]
+    delete ocConfig.value.presets[ocRenameOldName.value]
+    if (presetData) ocConfig.value.presets[newName] = presetData
+    if (ocConfig.value.preset === ocRenameOldName.value) {
+      ocConfig.value.preset = newName
+    }
+    ocDirty.value = false
+    ocRenamePresetDialogVisible.value = false
+    ElMessage.success('预设已重命名')
+  } catch (e: any) {
+    ElMessage.error(e.message || '重命名失败')
+  }
 }
 
 function ocGetActivePreset(): PresetItem | null {
@@ -2237,6 +2281,14 @@ function openUrl(url: string) {
                   <span class="oc-preset-name">{{ name }}</span>
                   <span class="oc-preset-count">{{ Object.keys(preset).length }} 个 Agent</span>
                   <el-icon
+                    size="14"
+                    class="oc-preset-rename"
+                    @click.stop="ocOpenRenamePreset(name as string)"
+                    title="重命名"
+                  >
+                    <Edit />
+                  </el-icon>
+                  <el-icon
                     v-if="ocConfig.preset !== name"
                     size="14"
                     class="oc-preset-delete"
@@ -2386,6 +2438,21 @@ function openUrl(url: string) {
         <div style="display: flex; gap: 12px; width: 100%">
           <el-button size="large" @click="ocNewPresetDialogVisible = false" style="flex: 1">取消</el-button>
           <el-button type="primary" size="large" @click="ocCreatePreset" style="flex: 1">创建</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- OpenCode Rename Preset Dialog -->
+    <el-dialog v-model="ocRenamePresetDialogVisible" title="重命名预设" width="400px" align-center>
+      <el-form label-position="top">
+        <el-form-item label="预设名称" required>
+          <el-input v-model="ocRenameNewName" placeholder="输入预设名称" size="large" @keyup.enter="ocRenamePreset" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocRenamePresetDialogVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="ocRenamePreset" style="flex: 1">确认</el-button>
         </div>
       </template>
     </el-dialog>
@@ -3803,6 +3870,20 @@ function openUrl(url: string) {
 
 .oc-preset-delete:hover {
   color: var(--danger) !important;
+}
+
+.oc-preset-rename {
+  display: none;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.oc-preset-item:hover .oc-preset-rename {
+  display: block;
+}
+
+.oc-preset-rename:hover {
+  color: var(--primary) !important;
 }
 
 /* Agent grid */

@@ -238,6 +238,25 @@ func (c *Config) DeletePreset(name string) error {
 	return nil
 }
 
+// RenamePreset 重命名预设
+func (c *Config) RenamePreset(oldName, newName string) error {
+	if _, exists := c.Presets[oldName]; !exists {
+		return fmt.Errorf("预设「%s」不存在", oldName)
+	}
+	if _, exists := c.Presets[newName]; exists {
+		return fmt.Errorf("预设「%s」已存在", newName)
+	}
+	if newName == "" {
+		return fmt.Errorf("预设名称不能为空")
+	}
+	c.Presets[newName] = c.Presets[oldName]
+	delete(c.Presets, oldName)
+	if c.Preset == oldName {
+		c.Preset = newName
+	}
+	return nil
+}
+
 // ==================== Model Discovery ====================
 
 const modelCacheTTL = 30 * time.Minute

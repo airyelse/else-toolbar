@@ -158,6 +158,10 @@ export function OpenWindowsHelloSettings() {
   return window['go']['main']['App']['OpenWindowsHelloSettings']();
 }
 
+export function RenameOpenCodePreset(arg1, arg2) {
+  return window['go']['main']['App']['RenameOpenCodePreset'](arg1, arg2);
+}
+
 export function RenamePathProfile(arg1, arg2) {
   return window['go']['main']['App']['RenamePathProfile'](arg1, arg2);
 }
