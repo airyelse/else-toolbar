@@ -182,6 +182,22 @@ export namespace opencode {
 	        this.temperature = source["temperature"];
 	    }
 	}
+	export class AppendPromptDiff {
+	    agent: string;
+	    store: string;
+	    file: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppendPromptDiff(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.agent = source["agent"];
+	        this.store = source["store"];
+	        this.file = source["file"];
+	    }
+	}
 	export class Preset {
 	    orchestrator?: AgentConfig;
 	    oracle?: AgentConfig;

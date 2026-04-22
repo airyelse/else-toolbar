@@ -42,6 +42,10 @@ export function DeleteTag(arg1) {
   return window['go']['main']['App']['DeleteTag'](arg1);
 }
 
+export function DiffAppendPrompts() {
+  return window['go']['main']['App']['DiffAppendPrompts']();
+}
+
 export function DisableHello() {
   return window['go']['main']['App']['DisableHello']();
 }
@@ -60,6 +64,18 @@ export function FetchAvailableVersions(arg1, arg2) {
 
 export function ForceRefreshModels() {
   return window['go']['main']['App']['ForceRefreshModels']();
+}
+
+export function GetAppendPromptPath(arg1) {
+  return window['go']['main']['App']['GetAppendPromptPath'](arg1);
+}
+
+export function GetAppendPromptStoreDir() {
+  return window['go']['main']['App']['GetAppendPromptStoreDir']();
+}
+
+export function GetAppendPromptStoreStats() {
+  return window['go']['main']['App']['GetAppendPromptStoreStats']();
 }
 
 export function GetCategoryTree() {
@@ -122,6 +138,10 @@ export function GetTags() {
   return window['go']['main']['App']['GetTags']();
 }
 
+export function ImportAppendPromptsFromFiles() {
+  return window['go']['main']['App']['ImportAppendPromptsFromFiles']();
+}
+
 export function InstallSDK(arg1, arg2) {
   return window['go']['main']['App']['InstallSDK'](arg1, arg2);
 }
@@ -170,12 +190,24 @@ export function PreviewMergeProfile(arg1) {
   return window['go']['main']['App']['PreviewMergeProfile'](arg1);
 }
 
+export function ReadAllAppendPrompts() {
+  return window['go']['main']['App']['ReadAllAppendPrompts']();
+}
+
+export function ReadAppendPrompt(arg1) {
+  return window['go']['main']['App']['ReadAppendPrompt'](arg1);
+}
+
 export function RenameOpenCodePreset(arg1, arg2) {
   return window['go']['main']['App']['RenameOpenCodePreset'](arg1, arg2);
 }
 
 export function RenamePathProfile(arg1, arg2) {
   return window['go']['main']['App']['RenamePathProfile'](arg1, arg2);
+}
+
+export function RestoreAppendPrompts() {
+  return window['go']['main']['App']['RestoreAppendPrompts']();
 }
 
 export function SaveOpenCodeConfig(arg1) {
@@ -240,4 +272,8 @@ export function UpdateEntry(arg1) {
 
 export function UpdateTag(arg1, arg2, arg3) {
   return window['go']['main']['App']['UpdateTag'](arg1, arg2, arg3);
+}
+
+export function WriteAppendPrompt(arg1, arg2) {
+  return window['go']['main']['App']['WriteAppendPrompt'](arg1, arg2);
 }

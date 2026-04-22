@@ -39,6 +39,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.Vault = vault.New(a.dataDir)
 	opencode.InitModelCache(a.dataDir)
+	opencode.InitAppendPromptStore(a.dataDir)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -209,6 +210,42 @@ func (a *App) FetchAvailableModels() ([]string, error) {
 
 func (a *App) ForceRefreshModels() ([]string, error) {
 	return opencode.ForceRefreshModels()
+}
+
+func (a *App) ReadAppendPrompt(agentName string) (string, error) {
+	return opencode.ReadAppendPrompt(agentName)
+}
+
+func (a *App) WriteAppendPrompt(agentName, content string) error {
+	return opencode.WriteAppendPrompt(agentName, content)
+}
+
+func (a *App) GetAppendPromptPath(agentName string) (string, error) {
+	return opencode.GetAppendPromptPath(agentName)
+}
+
+func (a *App) ReadAllAppendPrompts() (map[string]string, error) {
+	return opencode.ReadAllAppendPrompts()
+}
+
+func (a *App) RestoreAppendPrompts() (int, error) {
+	return opencode.SyncAppendPromptsToFiles()
+}
+
+func (a *App) ImportAppendPromptsFromFiles() (int, error) {
+	return opencode.ImportAppendPromptsFromFiles()
+}
+
+func (a *App) DiffAppendPrompts() ([]opencode.AppendPromptDiff, error) {
+	return opencode.DiffAppendPrompts(), nil
+}
+
+func (a *App) GetAppendPromptStoreStats() (int, error) {
+	return opencode.GetAppendPromptStoreStats()
+}
+
+func (a *App) GetAppendPromptStoreDir() (string, error) {
+	return a.dataDir, nil
 }
 
 func (a *App) RenameOpenCodePreset(oldName, newName string) error {

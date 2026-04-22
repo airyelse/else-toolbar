@@ -257,6 +257,193 @@ func (c *Config) RenamePreset(oldName, newName string) error {
 	return nil
 }
 
+// ==================== Append Prompt Files ====================
+// 以程序持久存储 (append_prompts.json) 为准，.md 文件为运行时同步目标
+
+// appendPromptStoreDir 由 InitAppendPromptStore 设置
+var appendPromptStoreDir string
+
+// InitAppendPromptStore 初始化持久存储目录
+func InitAppendPromptStore(dataDir string) {
+	appendPromptStoreDir = dataDir
+}
+
+// appendPromptStorePath 返回持久化 JSON 文件路径
+func appendPromptStorePath() string {
+	return filepath.Join(appendPromptStoreDir, "append_prompts.json")
+}
+
+// appendPromptStoreType 持久存储结构: agent -> content
+type appendPromptStoreType map[string]string
+
+func loadAppendPromptStore() appendPromptStoreType {
+	data, err := os.ReadFile(appendPromptStorePath())
+	if err != nil {
+		return make(appendPromptStoreType)
+	}
+	var store appendPromptStoreType
+	if err := json.Unmarshal(data, &store); err != nil {
+		return make(appendPromptStoreType)
+	}
+	return store
+}
+
+func saveAppendPromptStore(store appendPromptStoreType) error {
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(appendPromptStorePath(), append(data, '\n'), 0644)
+}
+
+// AppendPromptDir 返回 oh-my-opencode-slim 配置目录（_append.md 文件所在目录）
+func AppendPromptDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("无法获取用户目录: %w", err)
+	}
+	return filepath.Join(home, ".config", "opencode", "oh-my-opencode-slim"), nil
+}
+
+// readAppendMd 从 .md 文件读取内容（不涉及持久存储）
+func readAppendMd(agentName string) string {
+	baseDir, err := AppendPromptDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, agentName+"_append.md"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// ReadAppendPrompt 以持久存储为准读取指定 agent 的附加提示词
+func ReadAppendPrompt(agentName string) (string, error) {
+	store := loadAppendPromptStore()
+	if content, ok := store[agentName]; ok {
+		return content, nil
+	}
+	return "", nil
+}
+
+// WriteAppendPrompt 同时写入持久存储和 .md 文件
+func WriteAppendPrompt(agentName, content string) error {
+	// 1. 写入持久存储（source of truth）
+	store := loadAppendPromptStore()
+	store[agentName] = content
+	if err := saveAppendPromptStore(store); err != nil {
+		return fmt.Errorf("写入持久存储失败: %w", err)
+	}
+
+	// 2. 同步写入 .md 文件
+	baseDir, err := AppendPromptDir()
+	if err != nil {
+		return err
+	}
+	mdPath := filepath.Join(baseDir, agentName+"_append.md")
+	if err := os.WriteFile(mdPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("写入 .md 文件失败: %w", err)
+	}
+	return nil
+}
+
+// GetAppendPromptPath 返回指定 agent 的 _append.md 文件路径（UI 展示用）
+func GetAppendPromptPath(agentName string) (string, error) {
+	baseDir, err := AppendPromptDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, agentName+"_append.md"), nil
+}
+
+// ReadAllAppendPrompts 从持久存储读取所有 agent 的附加提示词
+func ReadAllAppendPrompts() (map[string]string, error) {
+	store := loadAppendPromptStore()
+	result := make(map[string]string)
+	for _, name := range AgentNames {
+		if content, ok := store[name]; ok {
+			result[name] = content
+		}
+	}
+	return result, nil
+}
+
+// AppendPromptDiff 单个 agent 的差异
+type AppendPromptDiff struct {
+	Agent string `json:"agent"`
+	Store string `json:"store"` // 持久存储内容
+	File  string `json:"file"`  // .md 文件内容
+}
+
+// DiffAppendPrompts 对比持久存储和 .md 文件，返回有差异的 agent 列表
+func DiffAppendPrompts() []AppendPromptDiff {
+	store := loadAppendPromptStore()
+	var diffs []AppendPromptDiff
+
+	for _, agentName := range AgentNames {
+		storeContent := store[agentName]
+		fileContent := readAppendMd(agentName)
+
+		if storeContent != fileContent {
+			diffs = append(diffs, AppendPromptDiff{
+				Agent: agentName,
+				Store: storeContent,
+				File:  fileContent,
+			})
+		}
+	}
+	return diffs
+}
+
+// SyncAppendPromptsToFiles 将持久存储的内容同步到 .md 文件（覆盖）
+func SyncAppendPromptsToFiles() (int, error) {
+	store := loadAppendPromptStore()
+
+	baseDir, err := AppendPromptDir()
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, agentName := range AgentNames {
+		content := store[agentName]
+		path := filepath.Join(baseDir, agentName+"_append.md")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return count, fmt.Errorf("写入 %s 失败: %w", path, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+// ImportAppendPromptsFromFiles 将 .md 文件内容导入到持久存储（反向同步）
+func ImportAppendPromptsFromFiles() (int, error) {
+	store := loadAppendPromptStore()
+
+	count := 0
+	for _, agentName := range AgentNames {
+		content := readAppendMd(agentName)
+		store[agentName] = content
+		if content != "" {
+			count++
+		}
+	}
+	return count, saveAppendPromptStore(store)
+}
+
+// GetAppendPromptStoreStats 返回持久存储的概要信息
+func GetAppendPromptStoreStats() (int, error) {
+	store := loadAppendPromptStore()
+	count := 0
+	for _, content := range store {
+		if content != "" {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // ==================== Model Discovery ====================
 
 const modelCacheTTL = 30 * time.Minute

@@ -26,6 +26,8 @@ export function DeletePathProfile(arg1:string):Promise<void>;
 
 export function DeleteTag(arg1:number):Promise<void>;
 
+export function DiffAppendPrompts():Promise<Array<opencode.AppendPromptDiff>>;
+
 export function DisableHello():Promise<void>;
 
 export function ExpandEnvValue(arg1:string):Promise<string>;
@@ -35,6 +37,12 @@ export function FetchAvailableModels():Promise<Array<string>>;
 export function FetchAvailableVersions(arg1:string,arg2:boolean):Promise<Array<string>>;
 
 export function ForceRefreshModels():Promise<Array<string>>;
+
+export function GetAppendPromptPath(arg1:string):Promise<string>;
+
+export function GetAppendPromptStoreDir():Promise<string>;
+
+export function GetAppendPromptStoreStats():Promise<number>;
 
 export function GetCategoryTree():Promise<Array<models.CategoryDTO>>;
 
@@ -66,6 +74,8 @@ export function GetRuntimeConfig():Promise<runtime.Config>;
 
 export function GetTags():Promise<Array<models.TagDTO>>;
 
+export function ImportAppendPromptsFromFiles():Promise<number>;
+
 export function InstallSDK(arg1:string,arg2:string):Promise<void>;
 
 export function IsHelloEnabled():Promise<boolean>;
@@ -90,9 +100,15 @@ export function OpenWindowsHelloSettings():Promise<void>;
 
 export function PreviewMergeProfile(arg1:string):Promise<Array<string>>;
 
+export function ReadAllAppendPrompts():Promise<Record<string, string>>;
+
+export function ReadAppendPrompt(arg1:string):Promise<string>;
+
 export function RenameOpenCodePreset(arg1:string,arg2:string):Promise<void>;
 
 export function RenamePathProfile(arg1:string,arg2:string):Promise<void>;
+
+export function RestoreAppendPrompts():Promise<number>;
 
 export function SaveOpenCodeConfig(arg1:opencode.Config):Promise<void>;
 
@@ -125,3 +141,5 @@ export function UpdateCategory(arg1:number,arg2:string,arg3:any):Promise<void>;
 export function UpdateEntry(arg1:models.EntryDTO):Promise<void>;
 
 export function UpdateTag(arg1:number,arg2:string,arg3:string):Promise<void>;
+
+export function WriteAppendPrompt(arg1:string,arg2:string):Promise<void>;

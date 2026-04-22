@@ -55,6 +55,15 @@ import {
   FetchAvailableModels,
   ForceRefreshModels,
   RenameOpenCodePreset,
+  ReadAppendPrompt,
+  WriteAppendPrompt as WriteAppendPromptBackend,
+  GetAppendPromptPath,
+  ReadAllAppendPrompts,
+  RestoreAppendPrompts,
+  ImportAppendPromptsFromFiles,
+  DiffAppendPrompts,
+  GetAppendPromptStoreStats,
+  GetAppendPromptStoreDir,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -847,6 +856,17 @@ const ocRenamePresetDialogVisible = ref(false)
 const ocRenameOldName = ref('')
 const ocRenameNewName = ref('')
 
+// Append prompt state
+const ocAppendPrompts = ref<Record<string, string>>({})
+const ocAppendPromptsLoading = ref(false)
+const ocPromptDialogVisible = ref(false)
+const ocPromptAgentName = ref('')
+const ocPromptContent = ref('')
+const ocPromptFilePath = ref('')
+const ocPromptDirty = ref(false)
+const ocPromptDiffs = ref<Array<{ agent: string; store: string; file: string }>>([])
+const ocPromptDiffVisible = ref(false)
+
 // Agent metadata (static)
 const ocAgentNames = ['orchestrator', 'oracle', 'librarian', 'explorer', 'designer', 'fixer']
 const ocAgentLabels: Record<string, string> = {
@@ -920,8 +940,9 @@ async function loadOpenCodeConfig() {
   }
   ocLoading.value = false
 
-  // 加载可用模型列表
+  // 加载可用模型列表和附加提示词
   loadAvailableModels()
+  loadAppendPrompts()
 }
 
 async function loadAvailableModels() {
@@ -1093,6 +1114,101 @@ async function ocRenamePreset() {
 function ocGetActivePreset(): PresetItem | null {
   if (!ocConfig.value) return null
   return ocConfig.value.presets[ocConfig.value.preset] || null
+}
+
+// ==================== Append Prompt Functions ====================
+
+async function loadAppendPrompts() {
+  ocAppendPromptsLoading.value = true
+  try {
+    ocAppendPrompts.value = await ReadAllAppendPrompts() || {}
+    // 检测 .md 文件与持久存储的差异
+    const diffs = await DiffAppendPrompts() || []
+    ocPromptDiffs.value = diffs
+    if (diffs.length > 0) {
+      ocPromptDiffVisible.value = true
+    }
+  } catch {
+    ocAppendPrompts.value = {}
+  }
+  ocAppendPromptsLoading.value = false
+}
+
+async function ocOpenPromptEdit(agentName: string) {
+  ocPromptAgentName.value = agentName
+  ocPromptDirty.value = false
+
+  try {
+    ocPromptFilePath.value = await GetAppendPromptPath(agentName) || ''
+  } catch {
+    ocPromptFilePath.value = ''
+  }
+
+  try {
+    ocPromptContent.value = await ReadAppendPrompt(agentName) || ''
+  } catch {
+    ocPromptContent.value = ''
+  }
+
+  ocPromptDialogVisible.value = true
+}
+
+async function ocSavePrompt() {
+  try {
+    await WriteAppendPromptBackend(ocPromptAgentName.value, ocPromptContent.value)
+    ocPromptDirty.value = false
+    ocPromptDialogVisible.value = false
+    ElMessage.success('附加提示词已保存')
+    await loadAppendPrompts()
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+// 同步：以持久存储覆盖 .md 文件
+async function ocSyncPromptsToFiles() {
+  try {
+    const count = await RestoreAppendPrompts()
+    ElMessage.success(`已同步 ${count} 个文件`)
+    ocPromptDiffVisible.value = false
+    ocPromptDiffs.value = []
+    await loadAppendPrompts()
+  } catch (e: any) {
+    ElMessage.error(e.message || '同步失败')
+  }
+}
+
+// 导入：以 .md 文件覆盖持久存储
+async function ocImportPromptsFromFiles() {
+  try {
+    await ElMessageBox.confirm(
+      '将用 .md 文件的内容覆盖持久存储，当前存储内容将被替换。是否继续？',
+      '从文件导入',
+      { confirmButtonText: '导入', cancelButtonText: '取消', type: 'warning' },
+    )
+    const count = await ImportAppendPromptsFromFiles()
+    ElMessage.success(`已导入 ${count} 条提示词`)
+    ocPromptDiffVisible.value = false
+    ocPromptDiffs.value = []
+    await loadAppendPrompts()
+  } catch { /* cancel */ }
+}
+
+// 忽略差异
+function ocDismissDiff() {
+  ocPromptDiffVisible.value = false
+  ocPromptDiffs.value = []
+}
+
+// 手动检查差异
+async function ocCheckDiff() {
+  const diffs = await DiffAppendPrompts() || []
+  if (diffs.length === 0) {
+    ElMessage.success('存储与文件一致，无差异')
+    return
+  }
+  ocPromptDiffs.value = diffs
+  ocPromptDiffVisible.value = true
 }
 
 // ==================== Init ====================
@@ -1690,8 +1806,45 @@ function openUrl(url: string) {
                       <el-icon size="14" @click.stop="openEditCategory(data)"><Edit /></el-icon>
                       <el-icon size="14" @click.stop="handleDeleteCategory(data)"><Delete /></el-icon>
                     </span>
+            </div>
+
+            <!-- Append Prompts Section -->
+            <div class="oc-section">
+              <div class="content-header">
+                <h2 class="content-title">附加提示词</h2>
+                <el-tag type="info" size="small" effect="plain" style="font-size: 11px">
+                  _append.md
+                </el-tag>
+              </div>
+              <div class="oc-prompt-list" v-loading="ocAppendPromptsLoading">
+                <div
+                  v-for="agentName in ocAgentNames"
+                  :key="'prompt-' + agentName"
+                  class="oc-prompt-item"
+                  @click="ocOpenPromptEdit(agentName)"
+                >
+                  <div class="oc-prompt-item-left">
+                    <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName], width: '28px', height: '28px', fontSize: '12px', borderRadius: '7px' }">
+                      {{ ocAgentLabels[agentName].charAt(0) }}
+                    </div>
+                    <div class="oc-prompt-item-info">
+                      <div class="oc-prompt-item-name">{{ ocAgentLabels[agentName] }}</div>
+                      <div class="oc-prompt-item-preview" v-if="ocAppendPrompts[agentName]">
+                        {{ ocAppendPrompts[agentName].substring(0, 60) }}{{ ocAppendPrompts[agentName].length > 60 ? '...' : '' }}
+                      </div>
+                      <div class="oc-prompt-item-preview oc-prompt-item-empty" v-else>
+                        未设置
+                      </div>
+                    </div>
                   </div>
-                </template>
+                  <el-icon size="14" class="oc-prompt-item-arrow"><ArrowRight /></el-icon>
+                </div>
+              </div>
+              <div class="form-hint" style="margin-top: 8px">
+                附加提示词会追加到 Agent 默认系统提示词末尾，不会覆盖原有内容。保存后写入配置目录下对应的 _append.md 文件。
+              </div>
+            </div>
+          </template>
               </el-tree>
               <div class="sidebar-empty" v-if="categoryTree.length === 0">
                 暂无分类
@@ -2464,6 +2617,54 @@ function openUrl(url: string) {
                 </div>
               </div>
             </div>
+
+            <!-- Append Prompts Section -->
+            <div class="oc-section">
+              <div class="content-header">
+                <h2 class="content-title">附加提示词</h2>
+                <div style="display: flex; gap: 8px; align-items: center">
+                  <el-tag type="info" size="small" effect="plain" style="font-size: 11px">
+                    _append.md
+                  </el-tag>
+                  <el-button size="small" text type="warning" @click="ocSyncPromptsToFiles" title="同步持久存储到 .md 文件">
+                    <el-icon><RefreshRight /></el-icon><span>同步</span>
+                  </el-button>
+                  <el-button size="small" text @click="ocCheckDiff" title="手动检查存储与文件是否一致">
+                    <el-icon><CircleCheck /></el-icon><span>检查</span>
+                  </el-button>
+                  <el-button size="small" text @click="async () => { const dir = await GetAppendPromptStoreDir(); if (dir) OpenInExplorer(dir) }" title="打开备份目录">
+                    <el-icon><FolderOpened /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+              <div class="oc-prompt-list" v-loading="ocAppendPromptsLoading">
+                <div
+                  v-for="agentName in ocAgentNames"
+                  :key="'prompt-' + agentName"
+                  class="oc-prompt-item"
+                  @click="ocOpenPromptEdit(agentName)"
+                >
+                  <div class="oc-prompt-item-left">
+                    <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName], width: '28px', height: '28px', fontSize: '12px', borderRadius: '7px' }">
+                      {{ ocAgentLabels[agentName].charAt(0) }}
+                    </div>
+                    <div class="oc-prompt-item-info">
+                      <div class="oc-prompt-item-name">{{ ocAgentLabels[agentName] }}</div>
+                      <div class="oc-prompt-item-preview" v-if="ocAppendPrompts[agentName]">
+                        {{ ocAppendPrompts[agentName].substring(0, 60) }}{{ ocAppendPrompts[agentName].length > 60 ? '...' : '' }}
+                      </div>
+                      <div class="oc-prompt-item-preview oc-prompt-item-empty" v-else>
+                        未设置
+                      </div>
+                    </div>
+                  </div>
+                  <el-icon size="14" class="oc-prompt-item-arrow"><ArrowRight /></el-icon>
+                </div>
+              </div>
+              <div class="form-hint" style="margin-top: 8px">
+                附加提示词会追加到 Agent 默认系统提示词末尾，不会覆盖原有内容。保存时同时写入 .md 文件和持久备份。
+              </div>
+            </div>
           </template>
 
           <div class="empty-state" v-else-if="!ocLoading">
@@ -2560,6 +2761,78 @@ function openUrl(url: string) {
         <div style="display: flex; gap: 12px; width: 100%">
           <el-button size="large" @click="ocRenamePresetDialogVisible = false" style="flex: 1">取消</el-button>
           <el-button type="primary" size="large" @click="ocRenamePreset" style="flex: 1">确认</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- OpenCode Append Prompt Dialog -->
+    <el-dialog
+      v-model="ocPromptDialogVisible"
+      :title="`附加提示词 — ${ocAgentLabels[ocPromptAgentName]}`"
+      width="600px"
+      align-center
+      :close-on-click-modal="false"
+    >
+      <div class="oc-prompt-path" v-if="ocPromptFilePath">
+        <el-icon size="13"><Document /></el-icon>
+        <span>{{ ocPromptFilePath }}</span>
+      </div>
+      <el-input
+        v-model="ocPromptContent"
+        type="textarea"
+        :autosize="{ minRows: 8, maxRows: 20 }"
+        placeholder="输入附加提示词，将追加到 Agent 默认系统提示词末尾..."
+        @input="ocPromptDirty = true"
+        style="margin-top: 12px"
+      />
+      <div class="form-hint" style="margin-top: 8px">
+        支持 Markdown 格式。此内容会追加到 {{ ocAgentLabels[ocPromptAgentName] }} 的默认提示词末尾，不会覆盖原有内容。
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocPromptDialogVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="ocSavePrompt" style="flex: 1">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- OpenCode Append Prompt Diff Alert -->
+    <el-dialog
+      v-model="ocPromptDiffVisible"
+      title="检测到附加提示词差异"
+      width="520px"
+      align-center
+      :close-on-click-modal="false"
+    >
+      <div class="dialog-desc" style="margin-bottom: 16px">
+        以下 Agent 的 .md 文件与持久存储内容不一致，可能是外部手动修改了文件。
+      </div>
+      <div class="oc-diff-list">
+        <div v-for="d in ocPromptDiffs" :key="d.agent" class="oc-diff-item">
+          <div class="oc-diff-agent">
+            <div class="oc-agent-badge" :style="{ background: ocAgentColors[d.agent], width: '24px', height: '24px', fontSize: '11px', borderRadius: '6px' }">
+              {{ ocAgentLabels[d.agent]?.charAt(0) }}
+            </div>
+            <span>{{ ocAgentLabels[d.agent] }}</span>
+          </div>
+          <div class="oc-diff-detail">
+            <div class="oc-diff-side">
+              <span class="oc-diff-label">持久存储</span>
+              <span class="oc-diff-value" :class="{ empty: !d.store }">{{ d.store ? d.store.substring(0, 50) + (d.store.length > 50 ? '...' : '') : '(空)' }}</span>
+            </div>
+            <span class="oc-diff-arrow">→</span>
+            <div class="oc-diff-side">
+              <span class="oc-diff-label">.md 文件</span>
+              <span class="oc-diff-value" :class="{ empty: !d.file }">{{ d.file ? d.file.substring(0, 50) + (d.file.length > 50 ? '...' : '') : '(空)' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocDismissDiff" style="flex: 1">忽略</el-button>
+          <el-button size="large" type="warning" @click="ocImportPromptsFromFiles" style="flex: 1">以文件为准</el-button>
+          <el-button type="primary" size="large" @click="ocSyncPromptsToFiles" style="flex: 1">以存储为准</el-button>
         </div>
       </template>
     </el-dialog>
@@ -4078,5 +4351,139 @@ function openUrl(url: string) {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+/* Append Prompt List */
+.oc-prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-prompt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.oc-prompt-item:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.oc-prompt-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-prompt-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-prompt-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.oc-prompt-item-preview {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.oc-prompt-item-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.oc-prompt-item-arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.oc-prompt-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+}
+
+/* Prompt Diff Alert */
+.oc-diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.oc-diff-item {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  border: 1px solid var(--border);
+}
+
+.oc-diff-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.oc-diff-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.oc-diff-side {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-diff-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.oc-diff-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.oc-diff-value.empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.oc-diff-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 16px;
 }
 </style>
