@@ -8,6 +8,8 @@ import {envvars} from '../models';
 
 export function ApplyPathProfile(arg1:string):Promise<void>;
 
+export function CleanInvalidUserPaths():Promise<Array<string>>;
+
 export function CreateCategory(arg1:string,arg2:any):Promise<void>;
 
 export function CreateEntry(arg1:models.EntryDTO):Promise<void>;
@@ -82,7 +84,11 @@ export function Lock():Promise<void>;
 
 export function OpenInExplorer(arg1:string):Promise<void>;
 
+export function OpenTerminal(arg1:string):Promise<void>;
+
 export function OpenWindowsHelloSettings():Promise<void>;
+
+export function PreviewMergeProfile(arg1:string):Promise<Array<string>>;
 
 export function RenameOpenCodePreset(arg1:string,arg2:string):Promise<void>;
 

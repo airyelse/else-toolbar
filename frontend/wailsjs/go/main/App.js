@@ -6,6 +6,10 @@ export function ApplyPathProfile(arg1) {
   return window['go']['main']['App']['ApplyPathProfile'](arg1);
 }
 
+export function CleanInvalidUserPaths() {
+  return window['go']['main']['App']['CleanInvalidUserPaths']();
+}
+
 export function CreateCategory(arg1, arg2) {
   return window['go']['main']['App']['CreateCategory'](arg1, arg2);
 }
@@ -154,8 +158,16 @@ export function OpenInExplorer(arg1) {
   return window['go']['main']['App']['OpenInExplorer'](arg1);
 }
 
+export function OpenTerminal(arg1) {
+  return window['go']['main']['App']['OpenTerminal'](arg1);
+}
+
 export function OpenWindowsHelloSettings() {
   return window['go']['main']['App']['OpenWindowsHelloSettings']();
+}
+
+export function PreviewMergeProfile(arg1) {
+  return window['go']['main']['App']['PreviewMergeProfile'](arg1);
 }
 
 export function RenameOpenCodePreset(arg1, arg2) {

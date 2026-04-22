@@ -184,6 +184,31 @@ func broadcastSettingChange() {
 	)
 }
 
+// CleanInvalidUserPaths removes non-existent or non-directory entries from user PATH.
+// Returns the list of removed paths.
+func CleanInvalidUserPaths() ([]string, error) {
+	entries := readRegPath(false)
+	kept := make([]string, 0, len(entries))
+	removed := make([]string, 0)
+
+	for _, e := range entries {
+		if e.Exists && e.IsDir {
+			kept = append(kept, e.RawPath)
+		} else {
+			removed = append(removed, e.RawPath)
+		}
+	}
+
+	if len(removed) == 0 {
+		return nil, nil
+	}
+
+	if err := SavePathEntries(kept); err != nil {
+		return nil, err
+	}
+	return removed, nil
+}
+
 // ReadUserPathRaw returns the raw (unexpanded) user PATH entries from the registry.
 func ReadUserPathRaw() []string {
 	entries := readRegPath(false)

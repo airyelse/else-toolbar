@@ -120,6 +120,10 @@ func (a *App) SavePathEntries(paths []string) error {
 	return pathenv.SavePathEntries(paths)
 }
 
+func (a *App) OpenTerminal(dir string) error {
+	return shell.OpenTerminal(dir)
+}
+
 func (a *App) ListPathProfiles() []pathenv.PathProfileDTO {
 	return pathenv.ListProfiles(a.dataDir)
 }
@@ -151,6 +155,20 @@ func (a *App) ApplyPathProfile(profileName string) error {
 	// Merge: profile paths first, then existing non-duplicate paths
 	merged := pathenv.MergeProfile(currentPaths, profilePaths)
 	return pathenv.SavePathEntries(merged)
+}
+
+// PreviewMergeProfile returns the would-be merged PATH list without saving.
+func (a *App) PreviewMergeProfile(profileName string) ([]string, error) {
+	profilePaths, err := pathenv.GetProfilePaths(a.dataDir, profileName)
+	if err != nil {
+		return nil, err
+	}
+	currentPaths := pathenv.ReadUserPathRaw()
+	return pathenv.MergeProfile(currentPaths, profilePaths), nil
+}
+
+func (a *App) CleanInvalidUserPaths() ([]string, error) {
+	return pathenv.CleanInvalidUserPaths()
 }
 
 func (a *App) SelectDirectory() (string, error) {

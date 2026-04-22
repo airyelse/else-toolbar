@@ -29,12 +29,14 @@ import {
   GetPathEntries,
   GetPathResult,
   OpenInExplorer,
+  OpenTerminal,
   SavePathEntries,
   ListPathProfiles,
   SavePathProfile,
   DeletePathProfile,
   RenamePathProfile,
-  ApplyPathProfile,
+  PreviewMergeProfile,
+  CleanInvalidUserPaths,
   ListEnvVars,
   SetEnvVar,
   DeleteEnvVar,
@@ -255,6 +257,38 @@ async function pathSave() {
   }
 }
 
+const invalidUserPathCount = computed(() => userPathEntries.value.filter(e => !e.exists || !e.isDir).length)
+
+async function handleOpenTerminal() {
+  try {
+    await OpenTerminal('')
+  } catch (e: any) {
+    ElMessage.error(e.message || '打开终端失败')
+  }
+}
+
+async function handleCleanInvalidPaths() {
+  const count = invalidUserPathCount.value
+  if (count === 0) {
+    ElMessage.info('没有无效路径')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `检测到 ${count} 条无效路径（不存在或非目录），确定清理？`,
+      '清理无效路径',
+      { confirmButtonText: '清理', cancelButtonText: '取消', type: 'warning' },
+    )
+    const removed = await CleanInvalidUserPaths()
+    if (removed && removed.length > 0) {
+      ElMessage.success(`已清理 ${removed.length} 条无效路径`)
+    } else {
+      ElMessage.info('没有需要清理的路径')
+    }
+    await loadPathEntries()
+  } catch { /* cancel */ }
+}
+
 // ==================== PATH Profile State ====================
 interface PathProfileItem {
   name: string
@@ -262,15 +296,27 @@ interface PathProfileItem {
 }
 
 const pathProfiles = ref<PathProfileItem[]>([])
+const selectedProfile = ref('')
 const profileSaveDialogVisible = ref(false)
 const profileSaveName = ref('')
 const profileManageDialogVisible = ref(false)
 const profileRenameTarget = ref('')
 const profileRenameName = ref('')
 
+// Merge preview state
+const mergeDialogVisible = ref(false)
+const mergePreview = ref<string[]>([])
+const mergeLoading = ref(false)
+const mergedSet = computed(() => new Set(mergePreview.value.map(p => p.toLowerCase())))
+
 async function loadPathProfiles() {
   try {
     pathProfiles.value = await ListPathProfiles() || []
+    // Auto-create "base" profile from current user PATH if none exist
+    if (pathProfiles.value.length === 0 && userPathStrings.value.length > 0) {
+      await SavePathProfile({ name: 'base', paths: [...userPathStrings.value] })
+      pathProfiles.value = await ListPathProfiles() || []
+    }
   } catch { /* ignore */ }
 }
 
@@ -293,15 +339,32 @@ async function handleSaveAsProfile() {
 async function handleApplyProfile(profileName: string) {
   try {
     await ElMessageBox.confirm(
-      `将 Profile「${profileName}」的路径合并到当前用户 PATH 前面（自动去重）？`,
-      '应用 Profile',
-      { confirmButtonText: '应用', cancelButtonText: '取消', type: 'info' },
+      `确定将 Profile「${profileName}」合并到用户 PATH？`,
+      '确认合并',
+      { confirmButtonText: '合并', cancelButtonText: '取消', type: 'info' },
     )
-    await ApplyPathProfile(profileName)
-    ElMessage.success(`已应用 Profile「${profileName}」`)
-    await loadPathEntries()
-    pathDirty.value = false
+    // Apply merge to local state only, user must click Save to write to registry
+    const merged = mergePreview.value.length > 0 ? mergePreview.value : await PreviewMergeProfile(profileName) || []
+    userPathStrings.value = [...merged]
+    userPathEntries.value = merged.map(p => ({ rawPath: p, path: p, exists: false, isDir: false }))
+    pathDirty.value = true
+    mergeDialogVisible.value = false
+    ElMessage.success(`已合并，请点击保存写入注册表`)
   } catch { /* cancel */ }
+}
+
+async function openMergePreview() {
+  if (!selectedProfile.value) return
+  mergeLoading.value = true
+  mergeDialogVisible.value = true
+  mergePreview.value = []
+  try {
+    mergePreview.value = await PreviewMergeProfile(selectedProfile.value) || []
+  } catch (e: any) {
+    ElMessage.error(e.message || '预览失败')
+    mergeDialogVisible.value = false
+  }
+  mergeLoading.value = false
 }
 
 async function handleDeleteProfile(name: string) {
@@ -1787,6 +1850,12 @@ function openUrl(url: string) {
               </div>
               <div style="flex:1"></div>
               <template v-if="pathTab === 'user'">
+                <el-button size="small" @click="handleOpenTerminal" class="path-action-btn">
+                  <el-icon><Monitor /></el-icon><span>终端</span>
+                </el-button>
+                <el-button size="small" @click="handleCleanInvalidPaths" class="path-action-btn" :disabled="invalidUserPathCount === 0">
+                  <el-icon><Delete /></el-icon><span>清理无效{{ invalidUserPathCount > 0 ? ` (${invalidUserPathCount})` : '' }}</span>
+                </el-button>
                 <el-button size="small" @click="pathStartAdd" class="path-action-btn">
                   <el-icon><Plus /></el-icon><span>添加</span>
                 </el-button>
@@ -1802,11 +1871,11 @@ function openUrl(url: string) {
               <div class="profile-bar" v-if="pathProfiles.length > 0 || true">
                 <div class="profile-bar-label">Profile</div>
                 <el-select
+                  v-model="selectedProfile"
                   placeholder="选择 Profile"
                   size="small"
                   clearable
                   style="width: 200px"
-                  @change="(val: string) => { if (val) handleApplyProfile(val) }"
                 >
                   <el-option
                     v-for="p in pathProfiles"
@@ -1820,6 +1889,9 @@ function openUrl(url: string) {
                     </div>
                   </el-option>
                 </el-select>
+                <el-button size="small" type="primary" @click="openMergePreview" class="path-action-btn" :disabled="!selectedProfile">
+                  <el-icon><Connection /></el-icon><span>合并</span>
+                </el-button>
                 <el-button size="small" @click="profileSaveDialogVisible = true; profileSaveName = ''" class="path-action-btn">
                   <el-icon><FolderAdd /></el-icon><span>保存为 Profile</span>
                 </el-button>
@@ -2074,6 +2146,41 @@ function openUrl(url: string) {
           <el-button size="small" @click="profileRenameTarget = ''">取消</el-button>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- Merge Preview dialog -->
+    <el-dialog v-model="mergeDialogVisible" :title="`合并预览 — ${selectedProfile}`" width="640px" align-center>
+      <div class="dialog-desc" style="margin-bottom: 12px">
+        <span style="color: var(--primary)">{{ selectedProfile }}</span> 的路径将置于最前，与当前用户 PATH 自动去重合并。
+      </div>
+      <div v-loading="mergeLoading">
+        <div v-if="mergePreview.length === 0 && !mergeLoading" class="sidebar-empty" style="padding: 16px">预览为空</div>
+        <div v-else class="merge-preview-list">
+          <div
+            v-for="(p, idx) in mergePreview"
+            :key="idx"
+            class="path-entry"
+            style="padding: 4px 8px"
+          >
+            <div class="path-entry-index" style="min-width: 28px">{{ idx + 1 }}</div>
+            <div class="path-entry-value" style="flex: 1">{{ p }}</div>
+            <el-tag
+              v-if="!userPathStrings.some(u => u.toLowerCase() === p.toLowerCase())"
+              type="primary" size="small" effect="light"
+            >新增</el-tag>
+          </div>
+        </div>
+        <div style="margin-top: 8px; color: var(--text-muted); font-size: 12px">
+          共 {{ mergePreview.length }} 条路径，
+          <span style="color: var(--primary)">{{ mergePreview.filter(p => !userPathStrings.some(u => u.toLowerCase() === p.toLowerCase())).length }} 条新增</span>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="mergeDialogVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="handleApplyProfile(selectedProfile)" style="flex: 1" :disabled="mergeLoading">确认合并</el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <!-- ==================== RUNTIME TOOL ==================== -->
