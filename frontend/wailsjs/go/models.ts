@@ -255,6 +255,73 @@ export namespace opencode {
 	        this.source = source["source"];
 	    }
 	}
+	export class MainAgentConfig {
+	    disable?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MainAgentConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.disable = source["disable"];
+	    }
+	}
+	export class MainProviderConfig {
+	    options?: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new MainProviderConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.options = source["options"];
+	    }
+	}
+	export class MainConfig {
+	    $schema?: string;
+	    model?: string;
+	    small_model?: string;
+	    plugin?: string[];
+	    agent?: Record<string, MainAgentConfig>;
+	    provider?: Record<string, MainProviderConfig>;
+	    mcp?: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new MainConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.$schema = source["$schema"];
+	        this.model = source["model"];
+	        this.small_model = source["small_model"];
+	        this.plugin = source["plugin"];
+	        this.agent = this.convertValues(source["agent"], MainAgentConfig, true);
+	        this.provider = this.convertValues(source["provider"], MainProviderConfig, true);
+	        this.mcp = source["mcp"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class Preset {
 	    orchestrator?: AgentConfig;
 	    oracle?: AgentConfig;

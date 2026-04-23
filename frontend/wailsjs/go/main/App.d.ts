@@ -59,6 +59,8 @@ export function GetHelloAvailability():Promise<string>;
 
 export function GetHelloCredential():Promise<Array<number>>;
 
+export function GetMainConfigPath():Promise<string>;
+
 export function GetOpenCodeAgentColors():Promise<Record<string, string>>;
 
 export function GetOpenCodeAgentLabels():Promise<Record<string, string>>;
@@ -117,9 +119,13 @@ export function ReadAllAppendPrompts():Promise<Record<string, string>>;
 
 export function ReadAppendPrompt(arg1:string):Promise<string>;
 
+export function ReadMainConfig():Promise<opencode.MainConfig>;
+
 export function RenamePathProfile(arg1:string,arg2:string):Promise<void>;
 
 export function RestoreAppendPrompts():Promise<number>;
+
+export function SaveMainConfig(arg1:opencode.MainConfig):Promise<void>;
 
 export function SaveOpenCodeConfig(arg1:opencode.PresetStoreData):Promise<void>;
 

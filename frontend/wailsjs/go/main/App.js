@@ -106,6 +106,10 @@ export function GetHelloCredential() {
   return window['go']['main']['App']['GetHelloCredential']();
 }
 
+export function GetMainConfigPath() {
+  return window['go']['main']['App']['GetMainConfigPath']();
+}
+
 export function GetOpenCodeAgentColors() {
   return window['go']['main']['App']['GetOpenCodeAgentColors']();
 }
@@ -222,12 +226,20 @@ export function ReadAppendPrompt(arg1) {
   return window['go']['main']['App']['ReadAppendPrompt'](arg1);
 }
 
+export function ReadMainConfig() {
+  return window['go']['main']['App']['ReadMainConfig']();
+}
+
 export function RenamePathProfile(arg1, arg2) {
   return window['go']['main']['App']['RenamePathProfile'](arg1, arg2);
 }
 
 export function RestoreAppendPrompts() {
   return window['go']['main']['App']['RestoreAppendPrompts']();
+}
+
+export function SaveMainConfig(arg1) {
+  return window['go']['main']['App']['SaveMainConfig'](arg1);
 }
 
 export function SaveOpenCodeConfig(arg1) {

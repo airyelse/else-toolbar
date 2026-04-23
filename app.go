@@ -180,7 +180,21 @@ func (a *App) SelectDirectory() (string, error) {
 	})
 }
 
-// ==================== OpenCode Config ====================
+// ==================== OpenCode Main Config ====================
+
+func (a *App) ReadMainConfig() (*opencode.MainConfig, error) {
+	return opencode.ReadMainConfig()
+}
+
+func (a *App) SaveMainConfig(cfg *opencode.MainConfig) error {
+	return opencode.SaveMainConfig(cfg)
+}
+
+func (a *App) GetMainConfigPath() (string, error) {
+	return opencode.MainConfigPath()
+}
+
+// ==================== OpenCode Config (oh-my-opencode-slim) ====================
 
 func (a *App) GetOpenCodeConfig() (*opencode.PresetStoreData, error) {
 	return opencode.ReadPresetStore()
