@@ -54,7 +54,9 @@ import {
   GetOpenCodeConfigPath,
   FetchAvailableModels,
   ForceRefreshModels,
-  RenameOpenCodePreset,
+  DiffPresets,
+  SyncPresetsToConfig,
+  ImportPresetsFromConfig,
   ReadAppendPrompt,
   WriteAppendPrompt as WriteAppendPromptBackend,
   GetAppendPromptPath,
@@ -64,6 +66,10 @@ import {
   DiffAppendPrompts,
   GetAppendPromptStoreStats,
   GetAppendPromptStoreDir,
+  OpenOpenCodeConfigDir,
+  GetOpenCodeMCPs,
+  GetOpenCodeSkills,
+  FetchMCPSkills,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -844,8 +850,6 @@ const ocAgentDialogVisible = ref(false)
 const ocEditAgentName = ref('')
 const ocEditPresetName = ref('')
 const ocEditForm = ref<AgentConfigItem>({ model: '', variant: '', skills: [], mcps: [] })
-const ocEditSkillsInput = ref('')
-const ocEditMcpsInput = ref('')
 
 // New preset dialog
 const ocNewPresetDialogVisible = ref(false)
@@ -855,6 +859,10 @@ const ocNewPresetName = ref('')
 const ocRenamePresetDialogVisible = ref(false)
 const ocRenameOldName = ref('')
 const ocRenameNewName = ref('')
+
+// Preset diff
+const ocPresetDiff = ref<{ store_active: string; file_active: string; differences: string[] } | null>(null)
+const ocPresetDiffVisible = ref(false)
 
 // Append prompt state
 const ocAppendPrompts = ref<Record<string, string>>({})
@@ -866,6 +874,11 @@ const ocPromptFilePath = ref('')
 const ocPromptDirty = ref(false)
 const ocPromptDiffs = ref<Array<{ agent: string; store: string; file: string }>>([])
 const ocPromptDiffVisible = ref(false)
+
+// MCP & Skill discovery
+const ocMCPs = ref<Array<{ name: string; type: string; command: string; url: string; source: string }>>([])
+const ocSkills = ref<Array<{ name: string; description: string; source: string }>>([])
+const ocMCPSkillsRefreshing = ref(false)
 
 // Agent metadata (static)
 const ocAgentNames = ['orchestrator', 'oracle', 'librarian', 'explorer', 'designer', 'fixer']
@@ -905,8 +918,8 @@ function ocStringToModel(s: string): any {
 async function loadOpenCodeConfig() {
   ocLoading.value = true
   try {
-    const cfg = await GetOpenCodeConfig()
-    if (!cfg) {
+    const store = await GetOpenCodeConfig()
+    if (!store) {
       ocConfig.value = null
       return
     }
@@ -915,7 +928,7 @@ async function loadOpenCodeConfig() {
 
     // Normalize presets: convert AgentConfig objects to plain AgentConfigItem
     const presets: Record<string, PresetItem> = {}
-    for (const [name, preset] of Object.entries(cfg.presets || {})) {
+    for (const [name, preset] of Object.entries(store.presets || {})) {
       const p: PresetItem = {}
       if (preset) {
         for (const agentName of ocAgentNames) {
@@ -933,16 +946,26 @@ async function loadOpenCodeConfig() {
       presets[name] = p
     }
 
-    ocConfig.value = { preset: cfg.preset, presets }
+    ocConfig.value = { preset: store.active_preset, presets }
     ocDirty.value = false
   } catch (e: any) {
     ElMessage.error(e.message || '加载 OpenCode 配置失败')
   }
   ocLoading.value = false
 
-  // 加载可用模型列表和附加提示词
+  // 加载可用模型列表、附加提示词和预设差异
   loadAvailableModels()
   loadAppendPrompts()
+  checkPresetDiff()
+  loadMCPSkills()
+}
+
+async function loadMCPSkills() {
+  try {
+    const result = await FetchMCPSkills()
+    if (result?.mcps?.length) ocMCPs.value = result.mcps
+    if (result?.skills?.length) ocSkills.value = result.skills
+  } catch { /* ignore */ }
 }
 
 async function loadAvailableModels() {
@@ -962,6 +985,19 @@ async function handleRefreshModels() {
     ElMessage.error(e.message || '更新模型列表失败')
   }
   ocModelsLoading.value = false
+}
+
+async function handleRefreshMCPSkills() {
+  ocMCPSkillsRefreshing.value = true
+  try {
+    const [mcps, skills] = await Promise.all([GetOpenCodeMCPs(), GetOpenCodeSkills()])
+    ocMCPs.value = mcps || []
+    ocSkills.value = skills || []
+    ElMessage.success('MCP & Skills 已更新')
+  } catch (e: any) {
+    ElMessage.error(e.message || '更新失败')
+  }
+  ocMCPSkillsRefreshing.value = false
 }
 
 async function saveOpenCodeConfig() {
@@ -986,7 +1022,7 @@ async function saveOpenCodeConfig() {
     }
 
     await SaveOpenCodeConfigBackend({
-      preset: ocConfig.value.preset,
+      active_preset: ocConfig.value.preset,
       presets,
     } as any)
     ocDirty.value = false
@@ -1010,27 +1046,21 @@ function ocOpenAgentEdit(agentName: string) {
   const existing = preset?.[agentName]
   if (existing) {
     ocEditForm.value = { ...existing }
-    ocEditSkillsInput.value = existing.skills.join(', ')
-    ocEditMcpsInput.value = existing.mcps.join(', ')
   } else {
     ocEditForm.value = { model: '', variant: '', skills: [], mcps: [] }
-    ocEditSkillsInput.value = ''
-    ocEditMcpsInput.value = ''
   }
   ocAgentDialogVisible.value = true
 }
 
 function ocSaveAgentEdit() {
   if (!ocConfig.value) return
-  const skills = ocEditSkillsInput.value.split(',').map(s => s.trim()).filter(Boolean)
-  const mcps = ocEditMcpsInput.value.split(',').map(s => s.trim()).filter(Boolean)
   const preset = ocConfig.value.presets[ocConfig.value.preset]
   if (!preset) return
   preset[ocEditAgentName.value] = {
     model: ocEditForm.value.model,
     variant: ocEditForm.value.variant,
-    skills,
-    mcps,
+    skills: ocEditForm.value.skills || [],
+    mcps: ocEditForm.value.mcps || [],
   }
   ocDirty.value = true
   ocAgentDialogVisible.value = false
@@ -1090,30 +1120,68 @@ async function ocRenamePreset() {
     ocRenamePresetDialogVisible.value = false
     return
   }
-  if (ocConfig.value.presets[newName] && newName !== ocRenameOldName.value) {
+  if (ocConfig.value.presets[newName]) {
     ElMessage.warning('预设名称已存在')
     return
   }
-  try {
-    await RenameOpenCodePreset(ocRenameOldName.value, newName)
-    // Update local state
-    const presetData = ocConfig.value.presets[ocRenameOldName.value]
-    delete ocConfig.value.presets[ocRenameOldName.value]
-    if (presetData) ocConfig.value.presets[newName] = presetData
-    if (ocConfig.value.preset === ocRenameOldName.value) {
-      ocConfig.value.preset = newName
-    }
-    ocDirty.value = false
-    ocRenamePresetDialogVisible.value = false
-    ElMessage.success('预设已重命名')
-  } catch (e: any) {
-    ElMessage.error(e.message || '重命名失败')
+  // In-memory rename
+  const presetData = ocConfig.value.presets[ocRenameOldName.value]
+  delete ocConfig.value.presets[ocRenameOldName.value]
+  if (presetData) ocConfig.value.presets[newName] = presetData
+  if (ocConfig.value.preset === ocRenameOldName.value) {
+    ocConfig.value.preset = newName
   }
+  ocDirty.value = true
+  ocRenamePresetDialogVisible.value = false
+  ElMessage.success('预设已重命名（保存后生效）')
 }
 
 function ocGetActivePreset(): PresetItem | null {
   if (!ocConfig.value) return null
   return ocConfig.value.presets[ocConfig.value.preset] || null
+}
+
+// ==================== Preset Diff Functions ====================
+
+async function checkPresetDiff() {
+  try {
+    const diff = await DiffPresets()
+    if (diff) {
+      ocPresetDiff.value = diff
+      ocPresetDiffVisible.value = true
+    }
+  } catch { /* ignore */ }
+}
+
+async function ocSyncPresetsToConfig() {
+  try {
+    await SyncPresetsToConfig()
+    ElMessage.success('预设已同步到配置文件')
+    ocPresetDiffVisible.value = false
+    ocPresetDiff.value = null
+  } catch (e: any) {
+    ElMessage.error(e.message || '同步失败')
+  }
+}
+
+async function ocImportPresetsFromConfig() {
+  try {
+    await ElMessageBox.confirm(
+      '将用配置文件的预设覆盖持久存储，当前存储内容将被替换。是否继续？',
+      '从文件导入',
+      { confirmButtonText: '导入', cancelButtonText: '取消', type: 'warning' },
+    )
+    await ImportPresetsFromConfig()
+    ElMessage.success('预设已从配置文件导入')
+    ocPresetDiffVisible.value = false
+    ocPresetDiff.value = null
+    await loadOpenCodeConfig()
+  } catch { /* cancel */ }
+}
+
+function ocDismissPresetDiff() {
+  ocPresetDiffVisible.value = false
+  ocPresetDiff.value = null
 }
 
 // ==================== Append Prompt Functions ====================
@@ -2517,6 +2585,71 @@ function openUrl(url: string) {
                 {{ ocConfigPath }}
               </span>
               <el-tag v-if="ocDirty" type="warning" size="small" effect="plain" style="margin-left: 8px">未保存</el-tag>
+              <el-button size="small" text type="warning" style="margin-left: auto" @click="checkPresetDiff" title="检查持久存储与配置文件是否一致">
+                <el-icon size="13"><CircleCheck /></el-icon><span>检查差异</span>
+              </el-button>
+              <el-button size="small" text @click="loadOpenCodeConfig" title="从持久存储重新加载">
+                <el-icon size="13"><RefreshRight /></el-icon><span>刷新</span>
+              </el-button>
+              <el-button size="small" text @click="OpenOpenCodeConfigDir">
+                <el-icon size="13"><FolderOpened /></el-icon><span>打开目录</span>
+              </el-button>
+            </div>
+
+            <!-- MCP Servers & Skills -->
+            <div class="oc-section">
+              <div class="content-header">
+                <h2 class="content-title">已集成 MCP & Skills</h2>
+                <el-button v-if="!ocMCPSkillsRefreshing" size="small" text @click="handleRefreshMCPSkills" title="刷新">
+                  <el-icon><RefreshRight /></el-icon>
+                </el-button>
+                <el-icon v-else size="14" class="is-loading" style="color: var(--el-text-color-secondary)"><Loading /></el-icon>
+              </div>
+
+              <!-- MCP Servers -->
+              <div class="oc-integrate-subtitle">MCP Servers ({{ ocMCPs.length }})</div>
+              <div class="oc-integrate-list" v-if="ocMCPs.length">
+                <div v-for="mcp in ocMCPs" :key="mcp.name" class="oc-integrate-item">
+                  <div class="oc-integrate-item-left">
+                    <div class="oc-integrate-badge oc-integrate-badge-mcp">{{ mcp.type === 'local' ? 'L' : 'R' }}</div>
+                    <div class="oc-integrate-item-info">
+                      <div class="oc-integrate-item-name">{{ mcp.name }}</div>
+                      <div class="oc-integrate-item-detail">{{ mcp.type === 'local' ? mcp.command : mcp.url }}</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 4px; align-items: center">
+                    <el-tag size="small" :type="mcp.source === 'plugin' ? 'warning' : 'success'" effect="plain">
+                      {{ mcp.source === 'plugin' ? '插件' : '配置' }}
+                    </el-tag>
+                    <el-tag size="small" :type="mcp.type === 'local' ? 'success' : ''" effect="plain">
+                      {{ mcp.type === 'local' ? '本地' : '远程' }}
+                    </el-tag>
+                  </div>
+                </div>
+              </div>
+              <div class="oc-integrate-empty" v-else>未配置 MCP Server</div>
+
+              <!-- Skills -->
+              <div class="oc-integrate-subtitle" style="margin-top: 16px">Skills ({{ ocSkills.length }})</div>
+              <div class="oc-integrate-list" v-if="ocSkills.length">
+                <div v-for="skill in ocSkills" :key="skill.name" class="oc-integrate-item">
+                  <div class="oc-integrate-item-left">
+                    <div class="oc-integrate-badge oc-integrate-badge-skill">S</div>
+                    <div class="oc-integrate-item-info">
+                      <div class="oc-integrate-item-name">{{ skill.name }}</div>
+                      <div class="oc-integrate-item-detail" v-if="skill.description">{{ skill.description }}</div>
+                    </div>
+                  </div>
+                  <el-tag size="small" :type="skill.source === 'plugin' ? 'warning' : skill.source === 'agent' ? '' : 'success'" effect="plain">
+                    {{ skill.source === 'plugin' ? '插件' : skill.source === 'agent' ? 'Agent' : '配置' }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="oc-integrate-empty" v-else>未安装 Skill</div>
+
+              <div class="form-hint" style="margin-top: 8px">
+                数据来源：opencode debug config/skill（含插件注入），随页面加载自动刷新。
+              </div>
             </div>
 
             <!-- Preset selector -->
@@ -2595,24 +2728,18 @@ function openUrl(url: string) {
                     >
                       {{ ocGetActivePreset()?.[agentName]?.variant }}
                     </el-tag>
-                    <el-tag
-                      v-if="ocGetActivePreset()?.[agentName]?.skills?.length"
-                      size="small"
-                      type="success"
-                      effect="plain"
-                      class="meta-tag"
-                    >
-                      Skills: {{ ocGetActivePreset()?.[agentName]?.skills?.join(', ') }}
-                    </el-tag>
-                    <el-tag
-                      v-if="ocGetActivePreset()?.[agentName]?.mcps?.length"
-                      size="small"
-                      type="warning"
-                      effect="plain"
-                      class="meta-tag"
-                    >
-                      MCPs: {{ ocGetActivePreset()?.[agentName]?.mcps?.join(', ') }}
-                    </el-tag>
+                    <span class="oc-agent-field">
+                      <span class="oc-agent-field-label">Skills</span>
+                      <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.skills?.length }">
+                        {{ ocGetActivePreset()?.[agentName]?.skills?.length ? ocGetActivePreset()?.[agentName]?.skills?.join(', ') : '未设置' }}
+                      </span>
+                    </span>
+                    <span class="oc-agent-field">
+                      <span class="oc-agent-field-label">MCPs</span>
+                      <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.mcps?.length }">
+                        {{ ocGetActivePreset()?.[agentName]?.mcps?.length ? ocGetActivePreset()?.[agentName]?.mcps?.join(', ') : '未设置' }}
+                      </span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -2709,18 +2836,41 @@ function openUrl(url: string) {
           </el-select>
         </el-form-item>
         <el-form-item label="Skills">
-          <el-input
-            v-model="ocEditSkillsInput"
-            placeholder="用逗号分隔，如: simplify, cartography 或 *"
+          <el-select
+            v-model="ocEditForm.skills"
+            multiple
+            placeholder="选择 Skills"
             size="large"
-          />
+            style="width: 100%"
+          >
+            <el-option label="* (全部)" value="*" />
+            <el-option
+              v-for="s in ocSkills"
+              :key="s.name"
+              :label="s.name"
+              :value="s.name"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="MCPs">
-          <el-input
-            v-model="ocEditMcpsInput"
-            placeholder="用逗号分隔，如: *, !context7"
+          <el-select
+            v-model="ocEditForm.mcps"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入，* 全部，!name 排除"
             size="large"
-          />
+            style="width: 100%"
+          >
+            <el-option label="* (全部)" value="*" />
+            <el-option
+              v-for="m in ocMCPs"
+              :key="m.name"
+              :label="m.name"
+              :value="m.name"
+            />
+          </el-select>
           <div class="form-hint">* 表示全部，!name 表示排除</div>
         </el-form-item>
       </el-form>
@@ -2833,6 +2983,40 @@ function openUrl(url: string) {
           <el-button size="large" @click="ocDismissDiff" style="flex: 1">忽略</el-button>
           <el-button size="large" type="warning" @click="ocImportPromptsFromFiles" style="flex: 1">以文件为准</el-button>
           <el-button type="primary" size="large" @click="ocSyncPromptsToFiles" style="flex: 1">以存储为准</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- OpenCode Preset Diff Alert -->
+    <el-dialog
+      v-model="ocPresetDiffVisible"
+      title="检测到预设差异"
+      width="520px"
+      align-center
+      :close-on-click-modal="false"
+    >
+      <div class="dialog-desc" style="margin-bottom: 16px">
+        配置文件中的预设与持久存储不一致，可能是外部手动修改了配置文件。
+      </div>
+      <div class="oc-diff-detail" style="margin-bottom: 12px">
+        <div class="oc-diff-side">
+          <span class="oc-diff-label">持久存储活跃预设</span>
+          <span class="oc-diff-value">{{ ocPresetDiff?.store_active || '(空)' }}</span>
+        </div>
+        <span class="oc-diff-arrow">→</span>
+        <div class="oc-diff-side">
+          <span class="oc-diff-label">配置文件活跃预设</span>
+          <span class="oc-diff-value">{{ ocPresetDiff?.file_active || '(空)' }}</span>
+        </div>
+      </div>
+      <div v-for="(d, i) in ocPresetDiff?.differences" :key="i" style="padding: 6px 0; font-size: 13px; color: var(--el-text-color-regular)">
+        {{ d }}
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="ocDismissPresetDiff" style="flex: 1">忽略</el-button>
+          <el-button size="large" type="warning" @click="ocImportPresetsFromConfig" style="flex: 1">以文件为准</el-button>
+          <el-button type="primary" size="large" @click="ocSyncPresetsToConfig" style="flex: 1">以存储为准</el-button>
         </div>
       </template>
     </el-dialog>
@@ -4344,6 +4528,112 @@ function openUrl(url: string) {
   gap: 6px;
   flex-wrap: wrap;
   padding-left: 50px;
+  align-items: center;
+}
+
+.oc-agent-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.oc-agent-field-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.oc-agent-field-value {
+  color: var(--el-text-color-regular);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* MCP & Skills Integration List */
+.oc-integrate-subtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+
+.oc-integrate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-integrate-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+  transition: background 0.15s;
+}
+
+.oc-integrate-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.oc-integrate-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.oc-integrate-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.oc-integrate-badge-mcp {
+  background: #f59e0b;
+}
+
+.oc-integrate-badge-skill {
+  background: #10b981;
+}
+
+.oc-integrate-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.oc-integrate-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.oc-integrate-item-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.oc-integrate-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px;
 }
 
 /* Form hint */

@@ -46,6 +46,10 @@ export function DiffAppendPrompts() {
   return window['go']['main']['App']['DiffAppendPrompts']();
 }
 
+export function DiffPresets() {
+  return window['go']['main']['App']['DiffPresets']();
+}
+
 export function DisableHello() {
   return window['go']['main']['App']['DisableHello']();
 }
@@ -60,6 +64,10 @@ export function FetchAvailableModels() {
 
 export function FetchAvailableVersions(arg1, arg2) {
   return window['go']['main']['App']['FetchAvailableVersions'](arg1, arg2);
+}
+
+export function FetchMCPSkills() {
+  return window['go']['main']['App']['FetchMCPSkills']();
 }
 
 export function ForceRefreshModels() {
@@ -118,6 +126,14 @@ export function GetOpenCodeConfigPath() {
   return window['go']['main']['App']['GetOpenCodeConfigPath']();
 }
 
+export function GetOpenCodeMCPs() {
+  return window['go']['main']['App']['GetOpenCodeMCPs']();
+}
+
+export function GetOpenCodeSkills() {
+  return window['go']['main']['App']['GetOpenCodeSkills']();
+}
+
 export function GetPassword(arg1) {
   return window['go']['main']['App']['GetPassword'](arg1);
 }
@@ -140,6 +156,10 @@ export function GetTags() {
 
 export function ImportAppendPromptsFromFiles() {
   return window['go']['main']['App']['ImportAppendPromptsFromFiles']();
+}
+
+export function ImportPresetsFromConfig() {
+  return window['go']['main']['App']['ImportPresetsFromConfig']();
 }
 
 export function InstallSDK(arg1, arg2) {
@@ -178,6 +198,10 @@ export function OpenInExplorer(arg1) {
   return window['go']['main']['App']['OpenInExplorer'](arg1);
 }
 
+export function OpenOpenCodeConfigDir() {
+  return window['go']['main']['App']['OpenOpenCodeConfigDir']();
+}
+
 export function OpenTerminal(arg1) {
   return window['go']['main']['App']['OpenTerminal'](arg1);
 }
@@ -196,10 +220,6 @@ export function ReadAllAppendPrompts() {
 
 export function ReadAppendPrompt(arg1) {
   return window['go']['main']['App']['ReadAppendPrompt'](arg1);
-}
-
-export function RenameOpenCodePreset(arg1, arg2) {
-  return window['go']['main']['App']['RenameOpenCodePreset'](arg1, arg2);
 }
 
 export function RenamePathProfile(arg1, arg2) {
@@ -248,6 +268,10 @@ export function StoreHelloCredential(arg1) {
 
 export function SwitchSDK(arg1, arg2) {
   return window['go']['main']['App']['SwitchSDK'](arg1, arg2);
+}
+
+export function SyncPresetsToConfig() {
+  return window['go']['main']['App']['SyncPresetsToConfig']();
 }
 
 export function UninstallSDK(arg1, arg2) {

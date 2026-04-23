@@ -51,6 +51,43 @@ export namespace envvars {
 
 }
 
+export namespace main {
+	
+	export class MCPSkillResult {
+	    mcps: opencode.MCPInfo[];
+	    skills: opencode.SkillInfo[];
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPSkillResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mcps = this.convertValues(source["mcps"], opencode.MCPInfo);
+	        this.skills = this.convertValues(source["skills"], opencode.SkillInfo);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace models {
 	
 	export class CategoryDTO {
@@ -198,6 +235,26 @@ export namespace opencode {
 	        this.file = source["file"];
 	    }
 	}
+	export class MCPInfo {
+	    name: string;
+	    type: string;
+	    command: string;
+	    url: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.command = source["command"];
+	        this.url = source["url"];
+	        this.source = source["source"];
+	    }
+	}
 	export class Preset {
 	    orchestrator?: AgentConfig;
 	    oracle?: AgentConfig;
@@ -238,19 +295,33 @@ export namespace opencode {
 		    return a;
 		}
 	}
-	export class Config {
-	    $schema?: string;
-	    preset: string;
-	    presets?: Record<string, Preset>;
+	export class PresetDiff {
+	    store_active: string;
+	    file_active: string;
+	    differences: string[];
 	
 	    static createFrom(source: any = {}) {
-	        return new Config(source);
+	        return new PresetDiff(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$schema = source["$schema"];
-	        this.preset = source["preset"];
+	        this.store_active = source["store_active"];
+	        this.file_active = source["file_active"];
+	        this.differences = source["differences"];
+	    }
+	}
+	export class PresetStoreData {
+	    active_preset: string;
+	    presets: Record<string, Preset>;
+	
+	    static createFrom(source: any = {}) {
+	        return new PresetStoreData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.active_preset = source["active_preset"];
 	        this.presets = this.convertValues(source["presets"], Preset, true);
 	    }
 	
@@ -271,6 +342,22 @@ export namespace opencode {
 		    }
 		    return a;
 		}
+	}
+	export class SkillInfo {
+	    name: string;
+	    description: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.source = source["source"];
+	    }
 	}
 
 }

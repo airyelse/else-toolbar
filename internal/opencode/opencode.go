@@ -155,12 +155,13 @@ func StringToModel(s string) interface{} {
 }
 
 // ConfigPath 返回配置文件路径
+func ConfigDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "opencode")
+}
+
 func ConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("无法获取用户目录: %w", err)
-	}
-	return filepath.Join(home, ".config", "opencode", "oh-my-opencode-slim.json"), nil
+	return filepath.Join(ConfigDir(), "oh-my-opencode-slim.json"), nil
 }
 
 // ReadConfig 读取配置文件
@@ -257,6 +258,182 @@ func (c *Config) RenamePreset(oldName, newName string) error {
 	return nil
 }
 
+// ==================== Preset Store ====================
+// 以程序持久存储 (opencode_presets.json) 为准，配置文件为同步目标
+
+// presetStoreDir 由 InitPresetStore 设置
+var presetStoreDir string
+
+// InitPresetStore 初始化持久存储目录
+func InitPresetStore(dataDir string) {
+	presetStoreDir = dataDir
+}
+
+func presetStorePath() string {
+	return filepath.Join(presetStoreDir, "opencode_presets.json")
+}
+
+// PresetStoreData 持久存储结构
+type PresetStoreData struct {
+	ActivePreset string             `json:"active_preset"`
+	Presets      map[string]*Preset `json:"presets"`
+}
+
+func loadPresetStoreFile() (*PresetStoreData, error) {
+	data, err := os.ReadFile(presetStorePath())
+	if err != nil {
+		return nil, err
+	}
+	var store PresetStoreData
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil, err
+	}
+	if store.Presets == nil {
+		store.Presets = make(map[string]*Preset)
+	}
+	return &store, nil
+}
+
+func savePresetStoreFile(store *PresetStoreData) error {
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(presetStorePath(), append(data, '\n'), 0644)
+}
+
+// ReadPresetStore 从持久存储读取，不存在则从配置文件导入
+func ReadPresetStore() (*PresetStoreData, error) {
+	store, err := loadPresetStoreFile()
+	if err == nil {
+		return store, nil
+	}
+
+	// 持久存储不存在，从配置文件导入
+	cfg, cfgErr := ReadConfig()
+	if cfgErr != nil {
+		return &PresetStoreData{
+			ActivePreset: "default",
+			Presets:      make(map[string]*Preset),
+		}, nil
+	}
+
+	storeData := &PresetStoreData{
+		ActivePreset: cfg.Preset,
+		Presets:      cfg.Presets,
+	}
+	if storeData.Presets == nil {
+		storeData.Presets = make(map[string]*Preset)
+	}
+	_ = savePresetStoreFile(storeData)
+	return storeData, nil
+}
+
+// WritePresetStore 同时写入持久存储和配置文件
+func WritePresetStore(store *PresetStoreData) error {
+	if err := savePresetStoreFile(store); err != nil {
+		return fmt.Errorf("写入持久存储失败: %w", err)
+	}
+
+	cfg := &Config{
+		Preset:  store.ActivePreset,
+		Presets: store.Presets,
+	}
+	if err := SaveConfig(cfg); err != nil {
+		return fmt.Errorf("同步配置文件失败: %w", err)
+	}
+	return nil
+}
+
+// PresetDiff 预设差异
+type PresetDiff struct {
+	StoreActive string   `json:"store_active"`
+	FileActive  string   `json:"file_active"`
+	Differences []string `json:"differences"`
+}
+
+// DiffPresets 对比持久存储与配置文件的预设差异
+func DiffPresets() (*PresetDiff, error) {
+	store, err := loadPresetStoreFile()
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := ReadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	diff := &PresetDiff{
+		StoreActive: store.ActivePreset,
+		FileActive:  cfg.Preset,
+	}
+
+	if store.ActivePreset != cfg.Preset {
+		diff.Differences = append(diff.Differences,
+			fmt.Sprintf("活跃预设不同: 存储「%s」vs 文件「%s」", store.ActivePreset, cfg.Preset))
+	}
+
+	// 收集所有预设名
+	allNames := make(map[string]bool)
+	for name := range store.Presets {
+		allNames[name] = true
+	}
+	for name := range cfg.Presets {
+		allNames[name] = true
+	}
+
+	for name := range allNames {
+		_, inStore := store.Presets[name]
+		_, inFile := cfg.Presets[name]
+		if inStore && !inFile {
+			diff.Differences = append(diff.Differences, fmt.Sprintf("预设「%s」仅存在于存储", name))
+		} else if !inStore && inFile {
+			diff.Differences = append(diff.Differences, fmt.Sprintf("预设「%s」仅存在于文件", name))
+		} else {
+			sJSON, _ := json.Marshal(store.Presets[name])
+			fJSON, _ := json.Marshal(cfg.Presets[name])
+			if string(sJSON) != string(fJSON) {
+				diff.Differences = append(diff.Differences, fmt.Sprintf("预设「%s」内容不同", name))
+			}
+		}
+	}
+
+	if len(diff.Differences) == 0 {
+		return nil, nil
+	}
+	return diff, nil
+}
+
+// SyncPresetsToConfig 将持久存储覆盖到配置文件
+func SyncPresetsToConfig() error {
+	store, err := loadPresetStoreFile()
+	if err != nil {
+		return err
+	}
+	cfg := &Config{
+		Preset:  store.ActivePreset,
+		Presets: store.Presets,
+	}
+	return SaveConfig(cfg)
+}
+
+// ImportPresetsFromConfig 将配置文件导入到持久存储
+func ImportPresetsFromConfig() error {
+	cfg, err := ReadConfig()
+	if err != nil {
+		return err
+	}
+	store := &PresetStoreData{
+		ActivePreset: cfg.Preset,
+		Presets:      cfg.Presets,
+	}
+	if store.Presets == nil {
+		store.Presets = make(map[string]*Preset)
+	}
+	return savePresetStoreFile(store)
+}
+
 // ==================== Append Prompt Files ====================
 // 以程序持久存储 (append_prompts.json) 为准，.md 文件为运行时同步目标
 
@@ -340,6 +517,9 @@ func WriteAppendPrompt(agentName, content string) error {
 	baseDir, err := AppendPromptDir()
 	if err != nil {
 		return err
+	}
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
 	}
 	mdPath := filepath.Join(baseDir, agentName+"_append.md")
 	if err := os.WriteFile(mdPath, []byte(content), 0644); err != nil {
@@ -442,6 +622,254 @@ func GetAppendPromptStoreStats() (int, error) {
 		}
 	}
 	return count, nil
+}
+
+// ==================== MCP & Skill Discovery ====================
+
+// MCPInfo represents a parsed MCP server entry
+type MCPInfo struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`    // "local" or "remote"
+	Command string `json:"command"` // for local: display command
+	URL     string `json:"url"`     // for remote: the URL
+	Source  string `json:"source"`  // "config" or "plugin"
+}
+
+// SkillInfo represents a discovered skill
+type SkillInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Source      string `json:"source"` // "config", "plugin", or "agent"
+}
+
+// ReadMCPConfig reads MCP servers from the resolved opencode config (includes plugin MCPs)
+func ReadMCPConfig() ([]MCPInfo, error) {
+	out, err := exec.Command("opencode", "debug", "config").Output()
+	if err != nil {
+		return nil, fmt.Errorf("执行 opencode debug config 失败: %w", err)
+	}
+
+	var cfg struct {
+		MCP map[string]struct {
+			Type    string   `json:"type"`
+			Command []string `json:"command,omitempty"`
+			URL     string   `json:"url,omitempty"`
+		} `json:"mcp"`
+	}
+
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		return nil, fmt.Errorf("解析配置失败: %w", err)
+	}
+
+	// Also read raw opencode.json to determine source
+	configMCPs := make(map[string]bool)
+	configDir := ConfigDir()
+	if data, err := os.ReadFile(filepath.Join(configDir, "opencode.json")); err == nil {
+		var raw struct {
+			MCP map[string]struct{} `json:"mcp"`
+		}
+		if json.Unmarshal(data, &raw) == nil {
+			for name := range raw.MCP {
+				configMCPs[name] = true
+			}
+		}
+	}
+
+	var result []MCPInfo
+	for name, mcp := range cfg.MCP {
+		info := MCPInfo{
+			Name:   name,
+			Type:   mcp.Type,
+			Source: "plugin",
+		}
+		if configMCPs[name] {
+			info.Source = "config"
+		}
+		if mcp.Type == "local" && len(mcp.Command) > 0 {
+			info.Command = strings.Join(mcp.Command, " ")
+		}
+		if mcp.Type == "remote" {
+			info.URL = mcp.URL
+		}
+		result = append(result, info)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+// ReadSkills reads all skills from the resolved opencode debug skill output
+func ReadSkills() ([]SkillInfo, error) {
+	out, err := exec.Command("opencode", "debug", "skill").Output()
+	if err != nil {
+		return nil, fmt.Errorf("执行 opencode debug skill 失败: %w", err)
+	}
+
+	var skills []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Location    string `json:"location"`
+	}
+
+	if err := json.Unmarshal(out, &skills); err != nil {
+		return nil, fmt.Errorf("解析 skills 失败: %w", err)
+	}
+
+	// Determine source from location
+	home, _ := os.UserHomeDir()
+	configSkillsDir := filepath.Join(home, ".config", "opencode", "skills")
+	result := make([]SkillInfo, 0, len(skills))
+	for _, s := range skills {
+		source := "plugin"
+		if configSkillsDir != "" && strings.HasPrefix(s.Location, configSkillsDir) {
+			source = "config"
+		} else if strings.Contains(s.Location, ".agents") {
+			source = "agent"
+		}
+		result = append(result, SkillInfo{
+			Name:        s.Name,
+			Description: s.Description,
+			Source:      source,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+// ==================== MCP & Skill Cache ====================
+
+const mcpSkillCacheTTL = 5 * time.Minute
+
+var (
+	mcpCache     []MCPInfo
+	skillCache   []SkillInfo
+	mcpSkillTime time.Time
+	mcpSkillMu   sync.Mutex
+	mcpSkillDir  string
+)
+
+// InitMCPSkillCache 初始化缓存目录，从文件加载缓存，后台异步刷新
+func InitMCPSkillCache(dataDir string) {
+	mcpSkillDir = dataDir
+	loadMCPSkillCacheFile()
+	go refreshMCPSkills()
+}
+
+type mcpSkillCacheFile struct {
+	MCPs   []MCPInfo  `json:"mcps"`
+	Skills []SkillInfo `json:"skills"`
+	Time   int64      `json:"time"`
+}
+
+func mcpSkillCacheFilePath() string {
+	return filepath.Join(mcpSkillDir, "mcpskills_cache.json")
+}
+
+func loadMCPSkillCacheFile() {
+	mcpSkillMu.Lock()
+	defer mcpSkillMu.Unlock()
+
+	data, err := os.ReadFile(mcpSkillCacheFilePath())
+	if err != nil {
+		return
+	}
+	var cf mcpSkillCacheFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		return
+	}
+	mcpCache = cf.MCPs
+	skillCache = cf.Skills
+	mcpSkillTime = time.Unix(cf.Time, 0)
+}
+
+func saveMCPSkillCacheFile(mcps []MCPInfo, skills []SkillInfo) {
+	cf := mcpSkillCacheFile{
+		MCPs:   mcps,
+		Skills: skills,
+		Time:   time.Now().Unix(),
+	}
+	data, _ := json.Marshal(cf)
+	os.WriteFile(mcpSkillCacheFilePath(), data, 0644)
+}
+
+func refreshMCPSkills() ([]MCPInfo, []SkillInfo, error) {
+	var mcps []MCPInfo
+	var skills []SkillInfo
+	var mcpErr, skillErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		mcps, mcpErr = ReadMCPConfig()
+	}()
+	go func() {
+		defer wg.Done()
+		skills, skillErr = ReadSkills()
+	}()
+	wg.Wait()
+
+	if mcpErr != nil && skillErr != nil {
+		return nil, nil, fmt.Errorf("刷新 MCP 失败: %w; 刷新 Skills 失败: %w", mcpErr, skillErr)
+	}
+
+	if mcpErr != nil {
+		return nil, skills, mcpErr
+	}
+	if skillErr != nil {
+		return mcps, nil, skillErr
+	}
+
+	mcpSkillMu.Lock()
+	mcpCache = mcps
+	skillCache = skills
+	mcpSkillTime = time.Now()
+	mcpSkillMu.Unlock()
+
+	go saveMCPSkillCacheFile(mcps, skills)
+
+	return mcps, skills, nil
+}
+
+// FetchMCPSkills 获取 MCP 和 Skills，优先使用缓存，过期则后台静默刷新
+func FetchMCPSkills() ([]MCPInfo, []SkillInfo) {
+	mcpSkillMu.Lock()
+	if mcpCache != nil && skillCache != nil && time.Since(mcpSkillTime) < mcpSkillCacheTTL {
+		mcps := make([]MCPInfo, len(mcpCache))
+		skills := make([]SkillInfo, len(skillCache))
+		copy(mcps, mcpCache)
+		copy(skills, skillCache)
+		mcpSkillMu.Unlock()
+		go refreshMCPSkills()
+		return mcps, skills
+	}
+	stale := mcpCache
+	staleSkills := skillCache
+	mcpSkillMu.Unlock()
+
+	// 过期或无缓存，后台刷新
+	go refreshMCPSkills()
+
+	// 返回过期数据（如果有）
+	if stale != nil && staleSkills != nil {
+		mcps := make([]MCPInfo, len(stale))
+		skills := make([]SkillInfo, len(staleSkills))
+		copy(mcps, stale)
+		copy(skills, staleSkills)
+		return mcps, skills
+	}
+	return nil, nil
+}
+
+// ForceRefreshMCPSkills 强制刷新 MCP 和 Skills 缓存
+func ForceRefreshMCPSkills() ([]MCPInfo, []SkillInfo, error) {
+	return refreshMCPSkills()
 }
 
 // ==================== Model Discovery ====================

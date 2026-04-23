@@ -39,7 +39,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.Vault = vault.New(a.dataDir)
 	opencode.InitModelCache(a.dataDir)
+	opencode.InitPresetStore(a.dataDir)
 	opencode.InitAppendPromptStore(a.dataDir)
+	opencode.InitMCPSkillCache(a.dataDir)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -180,12 +182,24 @@ func (a *App) SelectDirectory() (string, error) {
 
 // ==================== OpenCode Config ====================
 
-func (a *App) GetOpenCodeConfig() (*opencode.Config, error) {
-	return opencode.ReadConfig()
+func (a *App) GetOpenCodeConfig() (*opencode.PresetStoreData, error) {
+	return opencode.ReadPresetStore()
 }
 
-func (a *App) SaveOpenCodeConfig(cfg *opencode.Config) error {
-	return opencode.SaveConfig(cfg)
+func (a *App) SaveOpenCodeConfig(store *opencode.PresetStoreData) error {
+	return opencode.WritePresetStore(store)
+}
+
+func (a *App) DiffPresets() (*opencode.PresetDiff, error) {
+	return opencode.DiffPresets()
+}
+
+func (a *App) SyncPresetsToConfig() error {
+	return opencode.SyncPresetsToConfig()
+}
+
+func (a *App) ImportPresetsFromConfig() error {
+	return opencode.ImportPresetsFromConfig()
 }
 
 func (a *App) GetOpenCodeAgentNames() []string {
@@ -202,6 +216,10 @@ func (a *App) GetOpenCodeAgentColors() map[string]string {
 
 func (a *App) GetOpenCodeConfigPath() (string, error) {
 	return opencode.ConfigPath()
+}
+
+func (a *App) OpenOpenCodeConfigDir() error {
+	return shell.OpenExplorer(opencode.ConfigDir())
 }
 
 func (a *App) FetchAvailableModels() ([]string, error) {
@@ -248,13 +266,23 @@ func (a *App) GetAppendPromptStoreDir() (string, error) {
 	return a.dataDir, nil
 }
 
-func (a *App) RenameOpenCodePreset(oldName, newName string) error {
-	cfg, err := opencode.ReadConfig()
-	if err != nil {
-		return err
-	}
-	if err := cfg.RenamePreset(oldName, newName); err != nil {
-		return err
-	}
-	return opencode.SaveConfig(cfg)
+func (a *App) GetOpenCodeMCPs() ([]opencode.MCPInfo, error) {
+	mcps, _, err := opencode.ForceRefreshMCPSkills()
+	return mcps, err
+}
+
+func (a *App) GetOpenCodeSkills() ([]opencode.SkillInfo, error) {
+	_, skills, err := opencode.ForceRefreshMCPSkills()
+	return skills, err
+}
+
+// MCPSkillResult wraps both lists for Wails (can't return multiple values)
+type MCPSkillResult struct {
+	MCPs   []opencode.MCPInfo  `json:"mcps"`
+	Skills []opencode.SkillInfo `json:"skills"`
+}
+
+func (a *App) FetchMCPSkills() MCPSkillResult {
+	mcps, skills := opencode.FetchMCPSkills()
+	return MCPSkillResult{MCPs: mcps, Skills: skills}
 }
