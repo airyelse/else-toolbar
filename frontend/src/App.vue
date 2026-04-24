@@ -880,12 +880,12 @@ const ocPromptDiffVisible = ref(false)
 
 // Active tab in OpenCode page
 const ocActiveTab = ref('opencode')
-const ocOpenCodeSubTab = ref('model')
+const ocOpenCodeSubTab = ref('overview')
+const slimSubTab = ref('overview')
 
 // Main OpenCode config state
 interface MainProviderInfo {
   name: string
-  apiKey: string
 }
 interface MainAgentDisable {
   name: string
@@ -944,33 +944,33 @@ async function loadOpenCodeConfig() {
     const store = await GetOpenCodeConfig()
     if (!store) {
       ocConfig.value = null
-      return
-    }
-    const path = await GetOpenCodeConfigPath()
-    ocConfigPath.value = path || ''
+    } else {
+      const path = await GetOpenCodeConfigPath()
+      ocConfigPath.value = path || ''
 
-    // Normalize presets: convert AgentConfig objects to plain AgentConfigItem
-    const presets: Record<string, PresetItem> = {}
-    for (const [name, preset] of Object.entries(store.presets || {})) {
-      const p: PresetItem = {}
-      if (preset) {
-        for (const agentName of ocAgentNames) {
-          const agent = (preset as any)[agentName]
-          if (agent) {
-            p[agentName] = {
-              model: ocModelToString(agent.model),
-              variant: agent.variant || '',
-              skills: agent.skills || [],
-              mcps: agent.mcps || [],
+      // Normalize presets: convert AgentConfig objects to plain AgentConfigItem
+      const presets: Record<string, PresetItem> = {}
+      for (const [name, preset] of Object.entries(store.presets || {})) {
+        const p: PresetItem = {}
+        if (preset) {
+          for (const agentName of ocAgentNames) {
+            const agent = (preset as any)[agentName]
+            if (agent) {
+              p[agentName] = {
+                model: ocModelToString(agent.model),
+                variant: agent.variant || '',
+                skills: agent.skills || [],
+                mcps: agent.mcps || [],
+              }
             }
           }
         }
+        presets[name] = p
       }
-      presets[name] = p
-    }
 
-    ocConfig.value = { preset: store.active_preset, presets }
-    ocDirty.value = false
+      ocConfig.value = { preset: store.active_preset, presets }
+      ocDirty.value = false
+    }
   } catch (e: any) {
     ElMessage.error(e.message || '加载 OpenCode 配置失败')
   }
@@ -987,8 +987,8 @@ async function loadOpenCodeConfig() {
 async function loadMCPSkills() {
   try {
     const result = await FetchMCPSkills()
-    if (result?.mcps?.length) ocMCPs.value = result.mcps
-    if (result?.skills?.length) ocSkills.value = result.skills
+    ocMCPs.value = result?.mcps || []
+    ocSkills.value = result?.skills || []
   } catch { /* ignore */ }
 }
 
@@ -1313,9 +1313,8 @@ async function loadMainConfig() {
     // Normalize providers
     const provs: MainProviderInfo[] = []
     if (mainConfig.value?.provider) {
-      for (const [name, cfg] of Object.entries(mainConfig.value.provider)) {
-        const options = (cfg as any)?.options || {}
-        provs.push({ name, apiKey: options.apiKey || '' })
+      for (const [name] of Object.entries(mainConfig.value.provider)) {
+        provs.push({ name })
       }
     }
     mainProviders.value = provs
@@ -1336,12 +1335,7 @@ async function loadMainConfig() {
 
 async function saveMainConfig() {
   if (!mainConfig.value) return
-  // Rebuild providers from state
-  const providerObj: any = {}
-  for (const p of mainProviders.value) {
-    providerObj[p.name] = { options: { apiKey: p.apiKey } }
-  }
-  mainConfig.value.provider = providerObj
+  // Don't rebuild provider — preserve original config fields (OAuth, etc.)
   // Rebuild agent disables
   const agentObj: any = {}
   for (const a of mainAgentDisables.value) {
@@ -1898,16 +1892,37 @@ function openUrl(url: string) {
             <el-icon><Refresh /></el-icon><span>刷新</span>
           </el-button>
         </div>
-        <div class="header-actions" v-if="currentTool === 'opencode' && ocActiveTab === 'slim'">
+        <div class="header-actions" v-if="currentTool === 'opencode'">
+          <!-- 公共：更新模型 -->
           <el-button @click="handleRefreshModels" :loading="ocModelsLoading" class="btn-add">
             <el-icon><Refresh /></el-icon><span>更新模型</span>
           </el-button>
-          <el-button @click="loadOpenCodeConfig" class="btn-add">
-            <el-icon><RefreshRight /></el-icon><span>刷新配置</span>
-          </el-button>
-          <el-button type="primary" @click="saveOpenCodeConfig" :disabled="!ocDirty" class="btn-add">
-            <el-icon><Check /></el-icon><span>保存</span>
-          </el-button>
+          <!-- slim 子页签 -->
+          <template v-if="ocActiveTab === 'slim'">
+            <el-button @click="loadOpenCodeConfig" class="btn-add">
+              <el-icon><RefreshRight /></el-icon><span>刷新配置</span>
+            </el-button>
+            <el-button type="primary" @click="saveOpenCodeConfig" :disabled="!ocDirty" class="btn-add">
+              <el-icon><Check /></el-icon><span>保存</span>
+            </el-button>
+          </template>
+          <!-- opencode > overview -->
+          <template v-else-if="ocActiveTab === 'opencode' && ocOpenCodeSubTab === 'overview'">
+            <el-tag v-if="mainConfigDirty" type="warning" size="small" effect="plain" style="margin-right: 4px">未保存</el-tag>
+            <el-button @click="loadOpenCodeConfig" class="btn-add">
+              <el-icon><Refresh /></el-icon><span>刷新</span>
+            </el-button>
+          </template>
+          <!-- opencode > 非overview -->
+          <template v-else-if="ocActiveTab === 'opencode' && ocOpenCodeSubTab !== 'overview'">
+            <el-tag v-if="mainConfigDirty" type="warning" size="small" effect="plain" style="margin-right: 4px">未保存</el-tag>
+            <el-button @click="loadMainConfig" class="btn-add">
+              <el-icon><RefreshRight /></el-icon><span>刷新</span>
+            </el-button>
+            <el-button type="primary" @click="saveMainConfig" :disabled="!mainConfigDirty" class="btn-add">
+              <el-icon><Check /></el-icon><span>保存</span>
+            </el-button>
+          </template>
         </div>
       </header>
 
@@ -2672,34 +2687,143 @@ function openUrl(url: string) {
               </div>
             </div>
 
-            <!-- ====== Tab 1: OpenCode ====== -->
+             <!-- ====== Tab 1: OpenCode ====== -->
             <div v-show="ocActiveTab === 'opencode'">
               <template v-if="mainConfig">
-                <div class="oc-info-bar">
-                  <span class="oc-info-path">
-                    <el-icon size="13"><Document /></el-icon>
-                    {{ mainConfigPath }}
-                  </span>
-                  <el-tag v-if="mainConfigDirty" type="warning" size="small" effect="plain" style="margin-left: 8px">未保存</el-tag>
-                  <el-button size="small" text style="margin-left: auto" @click="loadMainConfig">
-                    <el-icon size="13"><RefreshRight /></el-icon><span>刷新</span>
-                  </el-button>
-                </div>
-
                 <!-- Tertiary nav -->
                 <div class="oc-tertiary-nav">
+                  <div class="oc-tertiary-nav-item" :class="{ active: ocOpenCodeSubTab === 'overview' }" @click="ocOpenCodeSubTab = 'overview'">
+                    <span>概览</span>
+                  </div>
                   <div class="oc-tertiary-nav-item" :class="{ active: ocOpenCodeSubTab === 'model' }" @click="ocOpenCodeSubTab = 'model'">
                     <span>模型设置</span>
                   </div>
                   <div class="oc-tertiary-nav-item" :class="{ active: ocOpenCodeSubTab === 'provider' }" @click="ocOpenCodeSubTab = 'provider'">
-                    <span>Provider & Agent</span>
+                    <span>Agent</span>
                   </div>
-                  <div class="oc-tertiary-nav-item" :class="{ active: ocOpenCodeSubTab === 'mcp' }" @click="ocOpenCodeSubTab = 'mcp'">
-                    <span>MCP</span>
+                </div>
+
+                <!-- Sub-tab: Overview -->
+                <div v-show="ocOpenCodeSubTab === 'overview'">
+            <div>
+              <!-- Stats chips -->
+              <div class="oc-ov-chips">
+                <div class="oc-ov-chip">
+                  <span class="oc-ov-chip-val oc-ov-chip-val--primary">{{ ocAvailableModels.length }}</span>
+                  <span class="oc-ov-chip-label">模型</span>
+                </div>
+                <div class="oc-ov-chip">
+                  <span class="oc-ov-chip-val oc-ov-chip-val--warning">{{ ocMCPs.length }}</span>
+                  <span class="oc-ov-chip-label">MCP</span>
+                </div>
+                <div class="oc-ov-chip">
+                  <span class="oc-ov-chip-val oc-ov-chip-val--success">{{ ocSkills.length }}</span>
+                  <span class="oc-ov-chip-label">Skills</span>
+                </div>
+                <div class="oc-ov-chip">
+                  <span class="oc-ov-chip-val">{{ mainProviders.length }}</span>
+                  <span class="oc-ov-chip-label">Providers</span>
+                </div>
+                <div class="oc-ov-chip">
+                  <span class="oc-ov-chip-val">{{ ocConfig?.presets ? Object.keys(ocConfig.presets).length : 0 }}</span>
+                  <span class="oc-ov-chip-label">预设</span>
+                </div>
+              </div>
+              <!-- Config path -->
+              <div class="oc-ov-paths">
+                <div class="oc-ov-path-row">
+                  <span class="oc-ov-path-dot oc-ov-path-dot--primary"></span>
+                  <span class="oc-ov-path-label">opencode.json</span>
+                  <span class="oc-ov-path-value">{{ mainConfigPath || '~/.config/opencode/opencode.json' }}</span>
+                  <el-button size="small" text @click="OpenOpenCodeConfigDir" title="打开配置目录" class="oc-ov-path-btn">
+                    <el-icon :size="14"><FolderOpened /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+              <!-- MCP + Skills + Providers -->
+              <div class="oc-ov-grid">
+                <!-- Providers -->
+                <div class="oc-ov-panel">
+                  <div class="oc-ov-panel-header">
+                    <div class="oc-ov-panel-title-group">
+                      <span class="oc-ov-panel-indicator oc-ov-panel-indicator--primary"></span>
+                      <h2 class="oc-ov-panel-title">Providers</h2>
+                    </div>
                   </div>
-                  <div class="oc-tertiary-nav-item" :class="{ active: ocOpenCodeSubTab === 'skills' }" @click="ocOpenCodeSubTab = 'skills'">
-                    <span>Skills</span>
+                  <div class="oc-integrate-list">
+                    <div v-for="prov in mainProviders" :key="prov.name" class="oc-integrate-item oc-ov-item">
+                      <div class="oc-integrate-item-left">
+                        <div class="oc-integrate-badge oc-ov-badge oc-ov-badge--provider">
+                          <el-icon :size="14"><Connection /></el-icon>
+                        </div>
+                        <div class="oc-integrate-item-info">
+                          <div class="oc-integrate-item-name oc-ov-item-name">{{ prov.name }}</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+                  <div class="oc-integrate-empty oc-ov-empty" v-if="!mainProviders.length">未配置 Provider</div>
+                </div>
+                <!-- MCP Servers -->
+                <div class="oc-ov-panel">
+                  <div class="oc-ov-panel-header">
+                    <div class="oc-ov-panel-title-group">
+                      <span class="oc-ov-panel-indicator oc-ov-panel-indicator--warning"></span>
+                      <h2 class="oc-ov-panel-title">MCP Servers</h2>
+                    </div>
+                    <el-button v-if="!ocMCPSkillsRefreshing" size="small" text @click="handleRefreshMCPSkills" title="刷新">
+                      <el-icon><RefreshRight /></el-icon>
+                    </el-button>
+                  </div>
+                  <div class="oc-integrate-list" v-if="ocMCPs.length">
+                    <div v-for="mcp in ocMCPs" :key="mcp.name" class="oc-integrate-item oc-ov-item">
+                      <div class="oc-integrate-item-left">
+                        <div class="oc-integrate-badge oc-integrate-badge-mcp oc-ov-badge">
+                          <el-icon :size="14"><Monitor v-if="mcp.type === 'local'" /><Link v-else /></el-icon>
+                        </div>
+                        <div class="oc-integrate-item-info">
+                          <div class="oc-integrate-item-name oc-ov-item-name">{{ mcp.name }}</div>
+                          <div class="oc-integrate-item-detail oc-ov-item-detail">{{ mcp.type === 'local' ? mcp.command : mcp.url }}</div>
+                        </div>
+                      </div>
+                      <el-tag size="small" :type="mcp.source === 'plugin' ? 'warning' : 'success'" effect="plain" class="oc-ov-tag">
+                        {{ mcp.source === 'plugin' ? '插件' : '配置' }}
+                      </el-tag>
+                    </div>
+                  </div>
+                  <div class="oc-integrate-empty oc-ov-empty" v-else>未配置 MCP Server</div>
+                </div>
+                <!-- Skills -->
+                <div class="oc-ov-panel">
+                  <div class="oc-ov-panel-header">
+                    <div class="oc-ov-panel-title-group">
+                      <span class="oc-ov-panel-indicator oc-ov-panel-indicator--success"></span>
+                      <h2 class="oc-ov-panel-title">Skills</h2>
+                    </div>
+                    <el-button v-if="!ocMCPSkillsRefreshing" size="small" text @click="handleRefreshMCPSkills" title="刷新">
+                      <el-icon><RefreshRight /></el-icon>
+                    </el-button>
+                  </div>
+                  <div class="oc-integrate-list" v-if="ocSkills.length">
+                    <div v-for="skill in ocSkills" :key="skill.name" class="oc-integrate-item oc-ov-item">
+                      <div class="oc-integrate-item-left">
+                        <div class="oc-integrate-badge oc-integrate-badge-skill oc-ov-badge">
+                          <el-icon :size="14"><MagicStick /></el-icon>
+                        </div>
+                        <div class="oc-integrate-item-info">
+                          <div class="oc-integrate-item-name oc-ov-item-name">{{ skill.name }}</div>
+                          <div class="oc-integrate-item-detail oc-ov-item-detail" v-if="skill.description">{{ skill.description }}</div>
+                        </div>
+                      </div>
+                      <el-tag size="small" :type="skill.source === 'plugin' ? 'warning' : skill.source === 'agent' ? undefined : 'success'" effect="plain" class="oc-ov-tag">
+                        {{ skill.source === 'plugin' ? '插件' : skill.source === 'agent' ? 'Agent' : '配置' }}
+                      </el-tag>
+                    </div>
+                  </div>
+                  <div class="oc-integrate-empty oc-ov-empty" v-else>未安装 Skill</div>
+                </div>
+              </div>
+            </div>
                 </div>
 
                 <!-- Sub-tab: Model settings -->
@@ -2741,30 +2865,6 @@ function openUrl(url: string) {
 
                 <!-- Sub-tab: Provider & Agent -->
                 <div v-show="ocOpenCodeSubTab === 'provider'">
-                  <!-- Providers -->
-                  <div class="oc-section">
-                    <div class="content-header"><h2 class="content-title">Provider 配置</h2></div>
-                    <div class="oc-provider-list" v-if="mainProviders.length">
-                      <div v-for="(prov, idx) in mainProviders" :key="prov.name" class="oc-provider-item">
-                        <div class="oc-provider-header">
-                          <span class="oc-provider-name">{{ prov.name }}</span>
-                          <el-button text size="small" type="danger" @click="mainProviders.splice(idx, 1); mainConfigDirty = true">
-                            <el-icon><Delete /></el-icon>
-                          </el-button>
-                        </div>
-                        <el-input
-                          v-model="prov.apiKey"
-                          placeholder="API Key"
-                          size="large"
-                          show-password
-                          @input="mainConfigDirty = true"
-                        >
-                          <template #prefix><el-icon><Key /></el-icon></template>
-                        </el-input>
-                      </div>
-                    </div>
-                    <div class="oc-integrate-empty" v-else>未配置 Provider</div>
-                  </div>
 
                   <!-- Disabled Agents -->
                   <div class="oc-section">
@@ -2787,76 +2887,7 @@ function openUrl(url: string) {
                     </el-button>
                   </div>
                 </div>
-
-                <!-- Sub-tab: MCP -->
-                <div v-show="ocOpenCodeSubTab === 'mcp'">
-                  <div class="oc-section">
-                    <div class="content-header">
-                      <h2 class="content-title">MCP Servers ({{ ocMCPs.length }})</h2>
-                      <el-button v-if="!ocMCPSkillsRefreshing" size="small" text @click="handleRefreshMCPSkills" title="刷新">
-                        <el-icon><RefreshRight /></el-icon>
-                      </el-button>
-                      <el-icon v-else size="14" class="is-loading" style="color: var(--el-text-color-secondary)"><Loading /></el-icon>
-                    </div>
-                    <div class="oc-integrate-list" v-if="ocMCPs.length">
-                      <div v-for="mcp in ocMCPs" :key="mcp.name" class="oc-integrate-item">
-                        <div class="oc-integrate-item-left">
-                          <div class="oc-integrate-badge oc-integrate-badge-mcp">{{ mcp.type === 'local' ? 'L' : 'R' }}</div>
-                          <div class="oc-integrate-item-info">
-                            <div class="oc-integrate-item-name">{{ mcp.name }}</div>
-                            <div class="oc-integrate-item-detail">{{ mcp.type === 'local' ? mcp.command : mcp.url }}</div>
-                          </div>
-                        </div>
-                        <div style="display: flex; gap: 4px; align-items: center">
-                          <el-tag size="small" :type="mcp.source === 'plugin' ? 'warning' : 'success'" effect="plain">
-                            {{ mcp.source === 'plugin' ? '插件' : '配置' }}
-                          </el-tag>
-                          <el-tag size="small" :type="mcp.type === 'local' ? 'success' : undefined" effect="plain">
-                            {{ mcp.type === 'local' ? '本地' : '远程' }}
-                          </el-tag>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="oc-integrate-empty" v-else>未配置 MCP Server</div>
-
-                    <div class="form-hint" style="margin-top: 8px">
-                      数据来源：opencode debug config（含插件注入），随页面加载自动刷新。
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Sub-tab: Skills -->
-                <div v-show="ocOpenCodeSubTab === 'skills'">
-                  <div class="oc-section">
-                    <div class="content-header">
-                      <h2 class="content-title">Skills ({{ ocSkills.length }})</h2>
-                      <el-button v-if="!ocMCPSkillsRefreshing" size="small" text @click="handleRefreshMCPSkills" title="刷新">
-                        <el-icon><RefreshRight /></el-icon>
-                      </el-button>
-                      <el-icon v-else size="14" class="is-loading" style="color: var(--el-text-color-secondary)"><Loading /></el-icon>
-                    </div>
-                    <div class="oc-integrate-list" v-if="ocSkills.length">
-                      <div v-for="skill in ocSkills" :key="skill.name" class="oc-integrate-item">
-                        <div class="oc-integrate-item-left">
-                          <div class="oc-integrate-badge oc-integrate-badge-skill">S</div>
-                          <div class="oc-integrate-item-info">
-                            <div class="oc-integrate-item-name">{{ skill.name }}</div>
-                            <div class="oc-integrate-item-detail" v-if="skill.description">{{ skill.description }}</div>
-                          </div>
-                        </div>
-                        <el-tag size="small" :type="skill.source === 'plugin' ? 'warning' : skill.source === 'agent' ? undefined : 'success'" effect="plain">
-                          {{ skill.source === 'plugin' ? '插件' : skill.source === 'agent' ? 'Agent' : '配置' }}
-                        </el-tag>
-                      </div>
-                    </div>
-                    <div class="oc-integrate-empty" v-else>未安装 Skill</div>
-
-                    <div class="form-hint" style="margin-top: 8px">
-                      数据来源：opencode debug skill（含插件注入），随页面加载自动刷新。
-                    </div>
-                  </div>
-                </div>
-              </template>
+               </template>
 
               <div class="empty-state" v-else-if="!mainConfigLoading">
                 <div class="empty-icon"><el-icon size="48"><Document /></el-icon></div>
@@ -2868,164 +2899,234 @@ function openUrl(url: string) {
             <!-- ====== Tab 2: oh-my-opencode-slim ====== -->
             <div v-show="ocActiveTab === 'slim'">
             <template v-if="ocConfig">
-            <!-- Config path info -->
-            <div class="oc-info-bar">
-              <span class="oc-info-path">
-                <el-icon size="13"><Document /></el-icon>
-                {{ ocConfigPath }}
-              </span>
-              <el-tag v-if="ocDirty" type="warning" size="small" effect="plain" style="margin-left: 8px">未保存</el-tag>
-              <el-button size="small" text style="margin-left: auto" @click="checkPresetDiff" title="检查持久存储与配置文件是否一致">
-                <el-icon size="13"><CircleCheck /></el-icon><span>检查差异</span>
-              </el-button>
-              <el-button size="small" text @click="loadOpenCodeConfig" title="从持久存储重新加载">
-                <el-icon size="13"><RefreshRight /></el-icon><span>刷新</span>
-              </el-button>
-              <el-button size="small" text @click="OpenOpenCodeConfigDir">
-                <el-icon size="13"><FolderOpened /></el-icon><span>打开目录</span>
-              </el-button>
-            </div>
-
-            <!-- Preset selector -->
-            <div class="oc-section">
-              <div class="content-header">
-                <h2 class="content-title">活跃预设</h2>
-                <el-button size="small" text @click="ocOpenNewPreset">
-                  <el-icon><Plus /></el-icon><span>新建预设</span>
-                </el-button>
-              </div>
-              <div class="oc-preset-list">
-                <div
-                  v-for="(preset, name) in ocConfig.presets"
-                  :key="name"
-                  class="oc-preset-item"
-                  :class="{ active: ocConfig.preset === name }"
-                  @click="ocSwitchPreset(name as string)"
-                >
-                  <div class="oc-preset-radio">
-                    <div class="oc-preset-dot" :class="{ active: ocConfig.preset === name }"></div>
-                  </div>
-                  <span class="oc-preset-name">{{ name }}</span>
-                  <span class="oc-preset-count">{{ Object.keys(preset).length }} 个 Agent</span>
-                  <el-icon
-                    size="14"
-                    class="oc-preset-rename"
-                    @click.stop="ocOpenRenamePreset(name as string)"
-                    title="重命名"
-                  >
-                    <Edit />
-                  </el-icon>
-                  <el-icon
-                    v-if="ocConfig.preset !== name"
-                    size="14"
-                    class="oc-preset-delete"
-                    @click.stop="ocDeletePreset(name as string)"
-                  >
-                    <Delete />
-                  </el-icon>
+              <!-- Tertiary nav -->
+              <div class="oc-tertiary-nav">
+                <div class="oc-tertiary-nav-item" :class="{ active: slimSubTab === 'overview' }" @click="slimSubTab = 'overview'">
+                  <span>概览</span>
+                </div>
+                <div class="oc-tertiary-nav-item" :class="{ active: slimSubTab === 'agent' }" @click="slimSubTab = 'agent'">
+                  <span>Agent 配置</span>
+                </div>
+                <div class="oc-tertiary-nav-item" :class="{ active: slimSubTab === 'prompts' }" @click="slimSubTab = 'prompts'">
+                  <span>附加提示词</span>
                 </div>
               </div>
-            </div>
 
-            <!-- Agent cards -->
-            <div class="oc-section">
-              <div class="content-header">
-                <h2 class="content-title">Agent 配置 — {{ ocConfig.preset }}</h2>
-              </div>
-              <div class="oc-agent-grid">
-                <div
-                  v-for="agentName in ocAgentNames"
-                  :key="agentName"
-                  class="oc-agent-card"
-                >
-                  <div class="oc-agent-header">
-                    <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName] }">
-                      {{ ocAgentLabels[agentName].charAt(0) }}
-                    </div>
-                    <div class="oc-agent-info">
-                      <div class="oc-agent-name">{{ ocAgentLabels[agentName] }}</div>
-                      <div class="oc-agent-model" v-if="ocGetActivePreset()?.[agentName]?.model">
-                        {{ ocGetActivePreset()?.[agentName]?.model }}
-                      </div>
-                      <div class="oc-agent-model oc-agent-empty" v-else>未配置</div>
-                    </div>
-                    <el-button text size="small" @click="ocOpenAgentEdit(agentName)" class="oc-agent-edit-btn">
-                      <el-icon><Edit /></el-icon>
+              <!-- Sub-tab: Overview -->
+              <div v-show="slimSubTab === 'overview'">
+                <!-- Stats chips -->
+                <div class="oc-ov-chips">
+                  <div class="oc-ov-chip">
+                    <span class="oc-ov-chip-val oc-ov-chip-val--primary">{{ ocAvailableModels.length }}</span>
+                    <span class="oc-ov-chip-label">模型</span>
+                  </div>
+                  <div class="oc-ov-chip">
+                    <span class="oc-ov-chip-val oc-ov-chip-val--warning">{{ ocMCPs.length }}</span>
+                    <span class="oc-ov-chip-label">MCP</span>
+                  </div>
+                  <div class="oc-ov-chip">
+                    <span class="oc-ov-chip-val oc-ov-chip-val--success">{{ ocSkills.length }}</span>
+                    <span class="oc-ov-chip-label">Skills</span>
+                  </div>
+                  <div class="oc-ov-chip">
+                    <span class="oc-ov-chip-val">{{ ocConfig?.presets ? Object.keys(ocConfig.presets).length : 0 }}</span>
+                    <span class="oc-ov-chip-label">预设</span>
+                  </div>
+                </div>
+                <!-- Config path -->
+                <div class="oc-ov-paths">
+                  <div class="oc-ov-path-row">
+                    <span class="oc-ov-path-dot oc-ov-path-dot--primary"></span>
+                    <span class="oc-ov-path-label">oh-my-opencode-slim.json</span>
+                    <span class="oc-ov-path-value">{{ ocConfigPath || '~/.config/opencode/oh-my-opencode-slim.json' }}</span>
+                    <el-button size="small" text @click="OpenOpenCodeConfigDir" title="打开配置目录" class="oc-ov-path-btn">
+                      <el-icon :size="14"><FolderOpened /></el-icon>
                     </el-button>
                   </div>
-                  <div class="oc-agent-meta" v-if="ocGetActivePreset()?.[agentName]">
-                    <el-tag
-                      v-if="ocGetActivePreset()?.[agentName]?.variant"
-                      size="small"
-                      effect="plain"
-                      class="meta-tag"
-                    >
-                      {{ ocGetActivePreset()?.[agentName]?.variant }}
-                    </el-tag>
-                    <span class="oc-agent-field">
-                      <span class="oc-agent-field-label">Skills</span>
-                      <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.skills?.length }">
-                        {{ ocGetActivePreset()?.[agentName]?.skills?.length ? ocGetActivePreset()?.[agentName]?.skills?.join(', ') : '未设置' }}
-                      </span>
-                    </span>
-                    <span class="oc-agent-field">
-                      <span class="oc-agent-field-label">MCPs</span>
-                      <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.mcps?.length }">
-                        {{ ocGetActivePreset()?.[agentName]?.mcps?.length ? ocGetActivePreset()?.[agentName]?.mcps?.join(', ') : '未设置' }}
-                      </span>
-                    </span>
-                  </div>
                 </div>
+                <!-- Agent 配置 -->
+                <div class="oc-ov-panel">
+                  <div class="oc-ov-panel-header">
+                    <div class="oc-ov-panel-title-group">
+                      <span class="oc-ov-panel-indicator oc-ov-panel-indicator--primary"></span>
+                      <h2 class="oc-ov-panel-title">Agent 配置 — {{ ocConfig.preset }}</h2>
+                    </div>
+                  </div>
+                  <div class="oc-integrate-list" v-if="ocConfig.presets?.[ocConfig.preset]">
+                    <div v-for="agentName in ocAgentNames" :key="agentName" class="oc-integrate-item oc-ov-item">
+                      <div class="oc-integrate-item-left">
+                        <div class="oc-integrate-badge oc-ov-badge" :style="{ background: ocAgentColors[agentName] }">
+                          {{ ocAgentLabels[agentName].charAt(0) }}
+                        </div>
+                        <div class="oc-integrate-item-info">
+                          <div class="oc-integrate-item-name oc-ov-item-name">{{ ocAgentLabels[agentName] }}</div>
+                          <div class="oc-integrate-item-detail oc-ov-item-detail" v-if="ocGetActivePreset()?.[agentName]?.model">
+                            {{ ocGetActivePreset()?.[agentName]?.model }}
+                          </div>
+                          <div class="oc-integrate-item-detail oc-ov-item-detail oc-agent-empty" v-else>未配置模型</div>
+                          <div class="oc-integrate-item-detail oc-ov-item-detail oc-ov-prompt-preview" v-if="ocAppendPrompts[agentName]">
+                            <span class="oc-ov-prompt-label">附加提示词</span>
+                            {{ ocAppendPrompts[agentName] }}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="oc-ov-item-tags">
+                        <el-tag v-if="ocGetActivePreset()?.[agentName]?.variant" size="small" effect="plain" class="oc-ov-tag">{{ ocGetActivePreset()?.[agentName]?.variant }}</el-tag>
+                        <el-tag v-if="ocGetActivePreset()?.[agentName]?.skills?.length" size="small" effect="plain" type="success" class="oc-ov-tag">{{ ocGetActivePreset()?.[agentName]?.skills?.length }} Skills</el-tag>
+                        <el-tag v-if="ocGetActivePreset()?.[agentName]?.mcps?.length" size="small" effect="plain" type="warning" class="oc-ov-tag">{{ ocGetActivePreset()?.[agentName]?.mcps?.length }} MCPs</el-tag>
+                        <el-tag v-if="ocAppendPrompts[agentName]" size="small" effect="plain" type="info" class="oc-ov-tag">提示词</el-tag>
+                      </div>
+                    </div>
+                  </div>
+                    <div class="oc-integrate-empty oc-ov-empty" v-else>无活跃预设</div>
+                  </div>
               </div>
-            </div>
 
-            <!-- Append Prompts Section -->
-            <div class="oc-section">
-              <div class="content-header">
-                <h2 class="content-title">附加提示词</h2>
-                <div style="display: flex; gap: 8px; align-items: center">
-                  <el-tag type="info" size="small" effect="plain" style="font-size: 11px">
-                    _append.md
-                  </el-tag>
-                  <el-button size="small" text type="warning" @click="ocSyncPromptsToFiles" title="同步持久存储到 .md 文件">
-                    <el-icon><RefreshRight /></el-icon><span>同步</span>
-                  </el-button>
-                  <el-button size="small" text @click="ocCheckDiff" title="手动检查存储与文件是否一致">
-                    <el-icon><CircleCheck /></el-icon><span>检查</span>
-                  </el-button>
-                  <el-button size="small" text @click="async () => { const dir = await GetAppendPromptStoreDir(); if (dir) OpenInExplorer(dir) }" title="打开备份目录">
-                    <el-icon><FolderOpened /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="oc-prompt-list" v-loading="ocAppendPromptsLoading">
-                <div
-                  v-for="agentName in ocAgentNames"
-                  :key="'prompt-' + agentName"
-                  class="oc-prompt-item"
-                  @click="ocOpenPromptEdit(agentName)"
-                >
-                  <div class="oc-prompt-item-left">
-                    <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName], width: '28px', height: '28px', fontSize: '12px', borderRadius: '7px' }">
-                      {{ ocAgentLabels[agentName].charAt(0) }}
-                    </div>
-                    <div class="oc-prompt-item-info">
-                      <div class="oc-prompt-item-name">{{ ocAgentLabels[agentName] }}</div>
-                      <div class="oc-prompt-item-preview" v-if="ocAppendPrompts[agentName]">
-                        {{ ocAppendPrompts[agentName].substring(0, 60) }}{{ ocAppendPrompts[agentName].length > 60 ? '...' : '' }}
+              <!-- Sub-tab: Agent 配置 -->
+              <div v-show="slimSubTab === 'agent'">
+                <!-- Preset selector -->
+                <div class="oc-section">
+                  <div class="content-header">
+                    <h2 class="content-title">活跃预设</h2>
+                    <el-button size="small" text @click="ocOpenNewPreset">
+                      <el-icon><Plus /></el-icon><span>新建预设</span>
+                    </el-button>
+                  </div>
+                  <div class="oc-preset-list">
+                    <div
+                      v-for="(preset, name) in ocConfig.presets"
+                      :key="name"
+                      class="oc-preset-item"
+                      :class="{ active: ocConfig.preset === name }"
+                      @click="ocSwitchPreset(name as string)"
+                    >
+                      <div class="oc-preset-radio">
+                        <div class="oc-preset-dot" :class="{ active: ocConfig.preset === name }"></div>
                       </div>
-                      <div class="oc-prompt-item-preview oc-prompt-item-empty" v-else>
-                        未设置
+                      <span class="oc-preset-name">{{ name }}</span>
+                      <span class="oc-preset-count">{{ Object.keys(preset).length }} 个 Agent</span>
+                      <el-icon
+                        size="14"
+                        class="oc-preset-rename"
+                        @click.stop="ocOpenRenamePreset(name as string)"
+                        title="重命名"
+                      >
+                        <Edit />
+                      </el-icon>
+                      <el-icon
+                        v-if="ocConfig.preset !== name"
+                        size="14"
+                        class="oc-preset-delete"
+                        @click.stop="ocDeletePreset(name as string)"
+                      >
+                        <Delete />
+                      </el-icon>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Agent cards -->
+                <div class="oc-section">
+                  <div class="content-header">
+                    <h2 class="content-title">Agent 配置 — {{ ocConfig.preset }}</h2>
+                  </div>
+                  <div class="oc-agent-grid">
+                    <div
+                      v-for="agentName in ocAgentNames"
+                      :key="agentName"
+                      class="oc-agent-card"
+                    >
+                      <div class="oc-agent-header">
+                        <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName] }">
+                          {{ ocAgentLabels[agentName].charAt(0) }}
+                        </div>
+                        <div class="oc-agent-info">
+                          <div class="oc-agent-name">{{ ocAgentLabels[agentName] }}</div>
+                          <div class="oc-agent-model" v-if="ocGetActivePreset()?.[agentName]?.model">
+                            {{ ocGetActivePreset()?.[agentName]?.model }}
+                          </div>
+                          <div class="oc-agent-model oc-agent-empty" v-else>未配置</div>
+                        </div>
+                        <el-button text size="small" @click="ocOpenAgentEdit(agentName)" class="oc-agent-edit-btn">
+                          <el-icon><Edit /></el-icon>
+                        </el-button>
+                      </div>
+                      <div class="oc-agent-meta" v-if="ocGetActivePreset()?.[agentName]">
+                        <el-tag
+                          v-if="ocGetActivePreset()?.[agentName]?.variant"
+                          size="small"
+                          effect="plain"
+                          class="meta-tag"
+                        >
+                          {{ ocGetActivePreset()?.[agentName]?.variant }}
+                        </el-tag>
+                        <span class="oc-agent-field">
+                          <span class="oc-agent-field-label">Skills</span>
+                          <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.skills?.length }">
+                            {{ ocGetActivePreset()?.[agentName]?.skills?.length ? ocGetActivePreset()?.[agentName]?.skills?.join(', ') : '未设置' }}
+                          </span>
+                        </span>
+                        <span class="oc-agent-field">
+                          <span class="oc-agent-field-label">MCPs</span>
+                          <span class="oc-agent-field-value" :class="{ 'oc-agent-empty': !ocGetActivePreset()?.[agentName]?.mcps?.length }">
+                            {{ ocGetActivePreset()?.[agentName]?.mcps?.length ? ocGetActivePreset()?.[agentName]?.mcps?.join(', ') : '未设置' }}
+                          </span>
+                        </span>
                       </div>
                     </div>
                   </div>
-                  <el-icon size="14" class="oc-prompt-item-arrow"><ArrowRight /></el-icon>
                 </div>
               </div>
-              <div class="form-hint" style="margin-top: 8px">
-                附加提示词会追加到 Agent 默认系统提示词末尾，不会覆盖原有内容。保存时同时写入 .md 文件和持久备份。
+
+              <!-- Sub-tab: 附加提示词 -->
+              <div v-show="slimSubTab === 'prompts'">
+                <div class="oc-section">
+                  <div class="content-header">
+                    <h2 class="content-title">附加提示词</h2>
+                    <div style="display: flex; gap: 8px; align-items: center">
+                      <el-tag type="info" size="small" effect="plain" style="font-size: 11px">
+                        _append.md
+                      </el-tag>
+                      <el-button size="small" text type="warning" @click="ocSyncPromptsToFiles" title="同步持久存储到 .md 文件">
+                        <el-icon><RefreshRight /></el-icon><span>同步</span>
+                      </el-button>
+                      <el-button size="small" text @click="ocCheckDiff" title="手动检查存储与文件是否一致">
+                        <el-icon><CircleCheck /></el-icon><span>检查</span>
+                      </el-button>
+                      <el-button size="small" text @click="async () => { const dir = await GetAppendPromptStoreDir(); if (dir) OpenInExplorer(dir) }" title="打开备份目录">
+                        <el-icon><FolderOpened /></el-icon>
+                      </el-button>
+                    </div>
+                  </div>
+                  <div class="oc-prompt-list" v-loading="ocAppendPromptsLoading">
+                    <div
+                      v-for="agentName in ocAgentNames"
+                      :key="'prompt-' + agentName"
+                      class="oc-prompt-item"
+                      @click="ocOpenPromptEdit(agentName)"
+                    >
+                      <div class="oc-prompt-item-left">
+                        <div class="oc-agent-badge" :style="{ background: ocAgentColors[agentName], width: '28px', height: '28px', fontSize: '12px', borderRadius: '7px' }">
+                          {{ ocAgentLabels[agentName].charAt(0) }}
+                        </div>
+                        <div class="oc-prompt-item-info">
+                          <div class="oc-prompt-item-name">{{ ocAgentLabels[agentName] }}</div>
+                          <div class="oc-prompt-item-preview" v-if="ocAppendPrompts[agentName]">
+                            {{ ocAppendPrompts[agentName].substring(0, 60) }}{{ ocAppendPrompts[agentName].length > 60 ? '...' : '' }}
+                          </div>
+                          <div class="oc-prompt-item-preview oc-prompt-item-empty" v-else>
+                            未设置
+                          </div>
+                        </div>
+                      </div>
+                      <el-icon size="14" class="oc-prompt-item-arrow"><ArrowRight /></el-icon>
+                    </div>
+                  </div>
+                  <div class="form-hint" style="margin-top: 8px">
+                    附加提示词会追加到 Agent 默认系统提示词末尾，不会覆盖原有内容。保存时同时写入 .md 文件和持久备份。
+                  </div>
+                </div>
               </div>
-            </div>
           </template>
 
           <div class="empty-state" v-else-if="!ocLoading">
@@ -3520,12 +3621,12 @@ function openUrl(url: string) {
 .app-main {
 
 /* Page-level secondary nav */
-.oc-secondary-nav {
+ .oc-secondary-nav {
   display: flex;
   gap: 4px;
-  padding: 0 0 20px 0;
+  padding: 0 0 8px 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  margin-bottom: 8px;
 }
 
 .oc-secondary-nav-item {
@@ -3552,12 +3653,12 @@ function openUrl(url: string) {
   border-bottom-color: var(--primary);
 }
 
-.oc-tertiary-nav {
+ .oc-tertiary-nav {
   display: flex;
   gap: 4px;
-  padding: 12px 0 12px 0;
+  padding: 0 0 6px 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  margin-bottom: 8px;
 }
 
 .oc-tertiary-nav-item {
@@ -3641,9 +3742,7 @@ function openUrl(url: string) {
 .btn-add { border-radius: 8px !important; font-weight: 500; }
 .btn-lock { border-radius: 8px !important; font-weight: 500; color: var(--text-secondary); }
 .btn-hello { font-size: 18px !important; }
-.btn-hello.is-active { color: var(--primary) !important; }
 .hello-divider { margin-top: -8px; }
-.hello-divider .el-divider__text { color: var(--text-muted); font-size: 12px; }
 
 /* ===== Body Layout ===== */
 .body {
@@ -3680,8 +3779,6 @@ function openUrl(url: string) {
   color: var(--text-secondary);
   font-size: 14px;
   transition: all 0.15s;
-  border-radius: 0;
-  margin: 0;
 }
 
 .sidebar-item:hover {
@@ -4006,7 +4103,6 @@ function openUrl(url: string) {
 /* ===== PATH Viewer ===== */
 .path-tabs {
   display: flex;
-  gap: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
@@ -4156,16 +4252,11 @@ function openUrl(url: string) {
 
 .path-edit-input :deep(.el-input-group__append) {
   display: flex;
-  gap: 0;
   padding: 0;
 }
 
 .path-action-btn {
   border-radius: 6px !important;
-}
-
-.path-tab .path-action-btn {
-  margin-left: auto;
 }
 
 /* ===== PATH Profile ===== */
@@ -4282,7 +4373,6 @@ function openUrl(url: string) {
 
 .env-tabs {
   display: flex;
-  gap: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
@@ -4627,7 +4717,6 @@ function openUrl(url: string) {
 }
 
 .sdk-version-actions .el-button {
-  width: auto !important;
   height: 28px !important;
   padding: 0 8px !important;
 }
@@ -4639,26 +4728,6 @@ function openUrl(url: string) {
 .card-leave-to { opacity: 0; transform: scale(0.95); }
 
 /* ===== OpenCode Config ===== */
-.oc-info-bar {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  margin-bottom: 20px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.oc-info-path {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .oc-section {
   margin-bottom: 24px;
 }
@@ -4854,13 +4923,6 @@ function openUrl(url: string) {
 }
 
 /* MCP & Skills Integration List */
-.oc-integrate-subtitle {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
-}
-
 .oc-integrate-list {
   display: flex;
   flex-direction: column;
@@ -4871,7 +4933,7 @@ function openUrl(url: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: var(--el-fill-color-lighter);
   transition: background 0.15s;
@@ -4890,13 +4952,13 @@ function openUrl(url: string) {
 }
 
 .oc-integrate-badge {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
@@ -4910,23 +4972,25 @@ function openUrl(url: string) {
   background: #10b981;
 }
 
-.oc-integrate-item-info {
+ .oc-integrate-item-info {
   min-width: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .oc-integrate-item-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .oc-integrate-item-detail {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 200px;
   margin-top: 2px;
 }
 
@@ -4936,6 +5000,45 @@ function openUrl(url: string) {
   text-align: center;
   padding: 12px;
 }
+
+/* Overview chips */
+.oc-ov-chips { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.oc-ov-chip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.15s; }
+.oc-ov-chip:hover { border-color: rgba(99, 102, 241, 0.3); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); }
+.oc-ov-chip-val { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
+.oc-ov-chip-val--primary { color: var(--primary); }
+.oc-ov-chip-val--warning { color: var(--warning); }
+.oc-ov-chip-val--success { color: var(--success); }
+.oc-ov-chip-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
+
+/* Config paths */
+.oc-ov-paths { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 20px; }
+.oc-ov-path-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.oc-ov-path-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+.oc-ov-path-dot--primary { background: var(--primary); }
+.oc-ov-path-label { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.oc-ov-path-value { font-size: 11px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.oc-ov-path-btn { flex-shrink: 0; color: var(--text-muted); margin-left: 4px; }
+
+/* Overview grid */
+.oc-ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+
+/* Overview panel */
+.oc-ov-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.oc-ov-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.oc-ov-panel-title-group { display: flex; align-items: center; gap: 8px; }
+.oc-ov-panel-indicator { width: 3px; height: 16px; border-radius: 2px; }
+.oc-ov-panel-indicator--primary { background: var(--primary); }
+.oc-ov-panel-indicator--warning { background: var(--warning); }
+.oc-ov-panel-indicator--success { background: var(--success); }
+.oc-ov-panel-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 0; }
+
+/* Overview item overrides */
+.oc-ov-tag { font-size: 10px; }
+.oc-ov-item-tags { display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+.oc-ov-prompt-preview { margin-top: 3px; padding: 2px 6px 2px 8px; background: var(--primary-bg); border-left: 2px solid var(--primary); border-radius: 0 4px 4px 0; font-style: normal; color: var(--text-muted); }
+.oc-ov-prompt-label { font-style: normal; font-size: 10px; font-weight: 700; color: var(--primary); opacity: 0.8; margin-right: 4px; }
+.oc-ov-badge--provider { background: var(--primary); }
 
 /* Form hint */
 .form-hint {
@@ -5015,33 +5118,6 @@ function openUrl(url: string) {
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   word-break: break-all;
-}
-
-/* Provider list */
-.oc-provider-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.oc-provider-item {
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  padding: 14px 16px;
-}
-
-.oc-provider-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.oc-provider-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
 }
 
 /* Prompt Diff Alert */
