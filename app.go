@@ -4,9 +4,11 @@ import (
 	"context"
 	"else-toolbox/internal/database"
 	"else-toolbox/internal/envvars"
-	"else-toolbox/internal/pathenv"
-	"else-toolbox/internal/runtime"
+	"else-toolbox/internal/models"
 	"else-toolbox/internal/opencode"
+	"else-toolbox/internal/pathenv"
+	"else-toolbox/internal/process"
+	"else-toolbox/internal/runtime"
 	"else-toolbox/internal/shell"
 	"else-toolbox/internal/vault"
 	"errors"
@@ -42,6 +44,7 @@ func (a *App) startup(ctx context.Context) {
 	opencode.InitPresetStore(a.dataDir)
 	opencode.InitAppendPromptStore(a.dataDir)
 	opencode.InitMCPSkillCache(a.dataDir)
+	process.GetManager(ctx)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -299,4 +302,166 @@ type MCPSkillResult struct {
 func (a *App) FetchMCPSkills() MCPSkillResult {
 	mcps, skills := opencode.FetchMCPSkills()
 	return MCPSkillResult{MCPs: mcps, Skills: skills}
+}
+
+// ==================== Script Console ====================
+
+// --- Project CRUD ---
+
+func (a *App) ListProjects() []models.ProjectDTO {
+	var projects []models.Project
+	database.DB.Order("`order` ASC, created_at ASC").Find(&projects)
+	result := make([]models.ProjectDTO, len(projects))
+	for i, p := range projects {
+		var count int64
+		database.DB.Model(&models.Script{}).Where("project_id = ?", p.ID).Count(&count)
+		result[i] = *p.ToDTO(int(count))
+	}
+	return result
+}
+
+func (a *App) CreateProject(name string, notes string) (models.ProjectDTO, error) {
+	if name == "" {
+		return models.ProjectDTO{}, errors.New("项目名称不能为空")
+	}
+	// 自动计算 order
+	var maxOrder int
+	database.DB.Model(&models.Project{}).Select("COALESCE(MAX(`order`), -1)").Scan(&maxOrder)
+
+	project := models.Project{
+		Name:  name,
+		Notes: notes,
+		Order: maxOrder + 1,
+	}
+	if err := database.DB.Create(&project).Error; err != nil {
+		return models.ProjectDTO{}, err
+	}
+	return *project.ToDTO(0), nil
+}
+
+func (a *App) UpdateProject(id uint, name string, notes string) error {
+	return database.DB.Model(&models.Project{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"name":  name,
+		"notes": notes,
+	}).Error
+}
+
+func (a *App) DeleteProject(id uint) error {
+	// 停止该项目下所有运行中的脚本
+	var scripts []models.Script
+	database.DB.Where("project_id = ?", id).Find(&scripts)
+	mgr := process.GetManager(a.ctx)
+	for _, s := range scripts {
+		mgr.Stop(s.ID)
+	}
+	// 将该项目的脚本设为无项目
+	database.DB.Model(&models.Script{}).Where("project_id = ?", id).Update("project_id", nil)
+	return database.DB.Delete(&models.Project{}, id).Error
+}
+
+// --- Script CRUD ---
+
+func (a *App) ListScripts() []models.ScriptDTO {
+	var scripts []models.Script
+	database.DB.Preload("Project").Order("created_at DESC").Find(&scripts)
+	result := make([]models.ScriptDTO, len(scripts))
+	for i, s := range scripts {
+		result[i] = *s.ToDTO()
+	}
+	return result
+}
+
+func (a *App) CreateScript(name string, command string, workDir string, envVars string, notes string, projectID uint) (models.ScriptDTO, error) {
+	script := models.Script{
+		Name:    name,
+		Command: command,
+		WorkDir: workDir,
+		EnvVars: envVars,
+		Notes:   notes,
+	}
+	if projectID > 0 {
+		script.ProjectID = &projectID
+	}
+	if err := database.DB.Create(&script).Error; err != nil {
+		return models.ScriptDTO{}, err
+	}
+	return *script.ToDTO(), nil
+}
+
+func (a *App) UpdateScript(id uint, name string, command string, workDir string, envVars string, notes string, projectID uint) error {
+	updates := map[string]interface{}{
+		"name":     name,
+		"command":  command,
+		"work_dir": workDir,
+		"env_vars": envVars,
+		"notes":    notes,
+	}
+	if projectID > 0 {
+		updates["project_id"] = projectID
+	} else {
+		updates["project_id"] = nil
+	}
+	return database.DB.Model(&models.Script{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (a *App) DeleteScript(id uint) error {
+	// 先停止进程
+	mgr := process.GetManager(a.ctx)
+	mgr.Stop(id)
+	return database.DB.Delete(&models.Script{}, id).Error
+}
+
+func (a *App) StartScript(id uint) error {
+	var script models.Script
+	if err := database.DB.First(&script, id).Error; err != nil {
+		return errors.New("脚本不存在")
+	}
+	mgr := process.GetManager(a.ctx)
+	return mgr.Start(id, script.Command, script.WorkDir, script.EnvVars)
+}
+
+func (a *App) StopScript(id uint) error {
+	mgr := process.GetManager(a.ctx)
+	return mgr.Stop(id)
+}
+
+func (a *App) RestartScript(id uint) error {
+	var script models.Script
+	if err := database.DB.First(&script, id).Error; err != nil {
+		return errors.New("脚本不存在")
+	}
+	mgr := process.GetManager(a.ctx)
+	return mgr.Restart(id, script.Command, script.WorkDir, script.EnvVars)
+}
+
+func (a *App) GetScriptStatus(id uint) models.ScriptStatusDTO {
+	mgr := process.GetManager(a.ctx)
+	status, exitCode, pid := mgr.GetStatus(id)
+	return models.ScriptStatusDTO{
+		ID:       id,
+		Status:   status,
+		ExitCode: exitCode,
+		PID:      pid,
+	}
+}
+
+func (a *App) GetScriptLogs(id uint) []models.LogLineDTO {
+	mgr := process.GetManager(a.ctx)
+	entries := mgr.GetLogs(id)
+	result := make([]models.LogLineDTO, len(entries))
+	for i, e := range entries {
+		result[i] = models.LogLineDTO{
+			ScriptID:  id,
+			Text:      e.Text,
+			Source:    e.Source,
+			Timestamp: e.Timestamp,
+		}
+	}
+	return result
+}
+
+func (a *App) ClearScriptLogs(id uint) error {
+	mgr := process.GetManager(a.ctx)
+	mgr.ClearLogs(id)
+	return nil
 }

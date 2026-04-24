@@ -25,6 +25,8 @@ func Init(dataDir string) error {
 		&models.MasterKey{},
 		&models.Category{},
 		&models.Tag{},
+		&models.Project{},
+		&models.Script{},
 	)
 	if err != nil {
 		return err

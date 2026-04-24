@@ -11,9 +11,15 @@ export function ApplyPathProfile(arg1:string):Promise<void>;
 
 export function CleanInvalidUserPaths():Promise<Array<string>>;
 
+export function ClearScriptLogs(arg1:number):Promise<void>;
+
 export function CreateCategory(arg1:string,arg2:any):Promise<void>;
 
 export function CreateEntry(arg1:models.EntryDTO):Promise<void>;
+
+export function CreateProject(arg1:string,arg2:string):Promise<models.ProjectDTO>;
+
+export function CreateScript(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:number):Promise<models.ScriptDTO>;
 
 export function CreateTag(arg1:string,arg2:string):Promise<void>;
 
@@ -24,6 +30,10 @@ export function DeleteEntry(arg1:number):Promise<void>;
 export function DeleteEnvVar(arg1:string,arg2:boolean):Promise<void>;
 
 export function DeletePathProfile(arg1:string):Promise<void>;
+
+export function DeleteProject(arg1:number):Promise<void>;
+
+export function DeleteScript(arg1:number):Promise<void>;
 
 export function DeleteTag(arg1:number):Promise<void>;
 
@@ -83,6 +93,10 @@ export function GetPathResult():Promise<pathenv.PathResult>;
 
 export function GetRuntimeConfig():Promise<runtime.Config>;
 
+export function GetScriptLogs(arg1:number):Promise<Array<models.LogLineDTO>>;
+
+export function GetScriptStatus(arg1:number):Promise<models.ScriptStatusDTO>;
+
 export function GetTags():Promise<Array<models.TagDTO>>;
 
 export function ImportAppendPromptsFromFiles():Promise<number>;
@@ -101,7 +115,11 @@ export function ListEnvVars():Promise<envvars.EnvResult>;
 
 export function ListPathProfiles():Promise<Array<pathenv.PathProfileDTO>>;
 
+export function ListProjects():Promise<Array<models.ProjectDTO>>;
+
 export function ListSDKs():Promise<Array<runtime.SDKInfo>>;
+
+export function ListScripts():Promise<Array<models.ScriptDTO>>;
 
 export function Lock():Promise<void>;
 
@@ -123,6 +141,8 @@ export function ReadMainConfig():Promise<opencode.MainConfig>;
 
 export function RenamePathProfile(arg1:string,arg2:string):Promise<void>;
 
+export function RestartScript(arg1:number):Promise<void>;
+
 export function RestoreAppendPrompts():Promise<number>;
 
 export function SaveMainConfig(arg1:opencode.MainConfig):Promise<void>;
@@ -143,6 +163,10 @@ export function SetupHello():Promise<void>;
 
 export function SetupMasterKey(arg1:string):Promise<void>;
 
+export function StartScript(arg1:number):Promise<void>;
+
+export function StopScript(arg1:number):Promise<void>;
+
 export function StoreHelloCredential(arg1:Array<number>):Promise<void>;
 
 export function SwitchSDK(arg1:string,arg2:string):Promise<void>;
@@ -158,6 +182,10 @@ export function UnlockWithHello():Promise<boolean>;
 export function UpdateCategory(arg1:number,arg2:string,arg3:any):Promise<void>;
 
 export function UpdateEntry(arg1:models.EntryDTO):Promise<void>;
+
+export function UpdateProject(arg1:number,arg2:string,arg3:string):Promise<void>;
+
+export function UpdateScript(arg1:number,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
 
 export function UpdateTag(arg1:number,arg2:string,arg3:string):Promise<void>;
 

@@ -194,6 +194,92 @@ export namespace models {
 		    return a;
 		}
 	}
+	export class LogLineDTO {
+	    id: number;
+	    scriptId: number;
+	    text: string;
+	    source: string;
+	    timestamp: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogLineDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.scriptId = source["scriptId"];
+	        this.text = source["text"];
+	        this.source = source["source"];
+	        this.timestamp = source["timestamp"];
+	    }
+	}
+	export class ProjectDTO {
+	    id: number;
+	    name: string;
+	    notes: string;
+	    order: number;
+	    scriptCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.notes = source["notes"];
+	        this.order = source["order"];
+	        this.scriptCount = source["scriptCount"];
+	    }
+	}
+	export class ScriptDTO {
+	    id: number;
+	    name: string;
+	    command: string;
+	    workDir: string;
+	    envVars: string;
+	    notes: string;
+	    projectId?: number;
+	    projectName: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScriptDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.command = source["command"];
+	        this.workDir = source["workDir"];
+	        this.envVars = source["envVars"];
+	        this.notes = source["notes"];
+	        this.projectId = source["projectId"];
+	        this.projectName = source["projectName"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class ScriptStatusDTO {
+	    id: number;
+	    status: string;
+	    exitCode: number;
+	    pid: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScriptStatusDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.status = source["status"];
+	        this.exitCode = source["exitCode"];
+	        this.pid = source["pid"];
+	    }
+	}
 
 }
 

@@ -10,12 +10,24 @@ export function CleanInvalidUserPaths() {
   return window['go']['main']['App']['CleanInvalidUserPaths']();
 }
 
+export function ClearScriptLogs(arg1) {
+  return window['go']['main']['App']['ClearScriptLogs'](arg1);
+}
+
 export function CreateCategory(arg1, arg2) {
   return window['go']['main']['App']['CreateCategory'](arg1, arg2);
 }
 
 export function CreateEntry(arg1) {
   return window['go']['main']['App']['CreateEntry'](arg1);
+}
+
+export function CreateProject(arg1, arg2) {
+  return window['go']['main']['App']['CreateProject'](arg1, arg2);
+}
+
+export function CreateScript(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function CreateTag(arg1, arg2) {
@@ -36,6 +48,14 @@ export function DeleteEnvVar(arg1, arg2) {
 
 export function DeletePathProfile(arg1) {
   return window['go']['main']['App']['DeletePathProfile'](arg1);
+}
+
+export function DeleteProject(arg1) {
+  return window['go']['main']['App']['DeleteProject'](arg1);
+}
+
+export function DeleteScript(arg1) {
+  return window['go']['main']['App']['DeleteScript'](arg1);
 }
 
 export function DeleteTag(arg1) {
@@ -154,6 +174,14 @@ export function GetRuntimeConfig() {
   return window['go']['main']['App']['GetRuntimeConfig']();
 }
 
+export function GetScriptLogs(arg1) {
+  return window['go']['main']['App']['GetScriptLogs'](arg1);
+}
+
+export function GetScriptStatus(arg1) {
+  return window['go']['main']['App']['GetScriptStatus'](arg1);
+}
+
 export function GetTags() {
   return window['go']['main']['App']['GetTags']();
 }
@@ -190,8 +218,16 @@ export function ListPathProfiles() {
   return window['go']['main']['App']['ListPathProfiles']();
 }
 
+export function ListProjects() {
+  return window['go']['main']['App']['ListProjects']();
+}
+
 export function ListSDKs() {
   return window['go']['main']['App']['ListSDKs']();
+}
+
+export function ListScripts() {
+  return window['go']['main']['App']['ListScripts']();
 }
 
 export function Lock() {
@@ -234,6 +270,10 @@ export function RenamePathProfile(arg1, arg2) {
   return window['go']['main']['App']['RenamePathProfile'](arg1, arg2);
 }
 
+export function RestartScript(arg1) {
+  return window['go']['main']['App']['RestartScript'](arg1);
+}
+
 export function RestoreAppendPrompts() {
   return window['go']['main']['App']['RestoreAppendPrompts']();
 }
@@ -274,6 +314,14 @@ export function SetupMasterKey(arg1) {
   return window['go']['main']['App']['SetupMasterKey'](arg1);
 }
 
+export function StartScript(arg1) {
+  return window['go']['main']['App']['StartScript'](arg1);
+}
+
+export function StopScript(arg1) {
+  return window['go']['main']['App']['StopScript'](arg1);
+}
+
 export function StoreHelloCredential(arg1) {
   return window['go']['main']['App']['StoreHelloCredential'](arg1);
 }
@@ -304,6 +352,14 @@ export function UpdateCategory(arg1, arg2, arg3) {
 
 export function UpdateEntry(arg1) {
   return window['go']['main']['App']['UpdateEntry'](arg1);
+}
+
+export function UpdateProject(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UpdateProject'](arg1, arg2, arg3);
+}
+
+export function UpdateScript(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function UpdateTag(arg1, arg2, arg3) {

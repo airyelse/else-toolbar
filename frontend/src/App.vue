@@ -73,6 +73,20 @@ import {
   ReadMainConfig,
   SaveMainConfig as SaveMainConfigBackend,
   GetMainConfigPath,
+  // Script Console
+  ListScripts,
+  CreateScript,
+  UpdateScript as UpdateScriptBackend,
+  DeleteScript as DeleteScriptBackend,
+  StartScript as StartScriptBackend,
+  StopScript as StopScriptBackend,
+  RestartScript as RestartScriptBackend,
+  GetScriptLogs as GetScriptLogsBackend,
+  ClearScriptLogs as ClearScriptLogsBackend,
+  ListProjects,
+  CreateProject,
+  UpdateProject as UpdateProjectBackend,
+  DeleteProject as DeleteProjectBackend,
 } from '../wailsjs/go/main/App'
 import type { models } from '../wailsjs/go/models'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -111,7 +125,7 @@ interface PathEntryItem {
 }
 
 // ==================== Navigation ====================
-type Tool = 'vault' | 'env' | 'runtime' | 'opencode'
+type Tool = 'vault' | 'env' | 'runtime' | 'opencode' | 'console'
 const currentTool = ref<Tool>('vault')
 
 // ==================== Vault State ====================
@@ -1355,8 +1369,294 @@ async function saveMainConfig() {
 function onMainModelChange() { mainConfigDirty.value = true }
 function onMainSmallModelChange() { mainConfigDirty.value = true }
 
+// ==================== Script Console State ====================
+interface ProjectItem {
+  id: number
+  name: string
+  notes: string
+  order: number
+  scriptCount: number
+}
+
+interface ScriptItem {
+  id: number
+  name: string
+  command: string
+  workDir: string
+  envVars: string
+  notes: string
+  projectId?: number
+  projectName: string
+  createdAt: string
+}
+
+interface LogLine {
+  id: number
+  scriptId: number
+  text: string
+  source: string
+  timestamp: string
+}
+
+// Project state
+const projectList = ref<ProjectItem[]>([])
+const selectedProjectId = ref<number | null>(null) // null = 全部
+const projectFormVisible = ref(false)
+const projectForm = ref<{ id: number; name: string; notes: string }>({ id: 0, name: '', notes: '' })
+const projectFormIsEdit = ref(false)
+
+const scriptList = ref<ScriptItem[]>([])
+const scriptLoading = ref(false)
+const scriptFormVisible = ref(false)
+const scriptForm = ref<{ id: number; name: string; command: string; workDir: string; envVars: string; notes: string; projectId: number }>({
+  id: 0, name: '', command: '', workDir: '', envVars: '', notes: '', projectId: 0,
+})
+const scriptFormIsEdit = ref(false)
+const scriptLogVisible = ref(false)
+const scriptLogId = ref(0)
+const scriptLogName = ref('')
+const scriptLogs = ref<LogLine[]>([])
+const scriptLogLoading = ref(false)
+const scriptLogAutoScroll = ref(true)
+const scriptLogRef = ref<HTMLDivElement>()
+const scriptStatuses = ref<Record<number, { status: string; pid: number; exitCode: number }>>({})
+
+const filteredScriptList = computed(() => {
+  if (selectedProjectId.value === null) return scriptList.value
+  return scriptList.value.filter(s => s.projectId === selectedProjectId.value)
+})
+
+// --- Project functions ---
+
+async function loadProjects() {
+  try {
+    projectList.value = await ListProjects() || []
+  } catch { /* ignore */ }
+}
+
+function openAddProject() {
+  projectFormIsEdit.value = false
+  projectForm.value = { id: 0, name: '', notes: '' }
+  projectFormVisible.value = true
+}
+
+function openEditProject(item: ProjectItem) {
+  projectFormIsEdit.value = true
+  projectForm.value = { id: item.id, name: item.name, notes: item.notes }
+  projectFormVisible.value = true
+}
+
+async function handleSaveProject() {
+  if (!projectForm.value.name.trim()) {
+    ElMessage.warning('请输入项目名称')
+    return
+  }
+  try {
+    if (projectFormIsEdit.value) {
+      await UpdateProjectBackend(projectForm.value.id, projectForm.value.name.trim(), projectForm.value.notes)
+      ElMessage.success('更新成功')
+    } else {
+      await CreateProject(projectForm.value.name.trim(), projectForm.value.notes)
+      ElMessage.success('创建成功')
+    }
+    projectFormVisible.value = false
+    await loadProjects()
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+async function handleDeleteProject(item: ProjectItem) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除项目「${item.name}」？该项目下的 ${item.scriptCount} 个脚本将变为未分类。`,
+      '删除项目',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    await DeleteProjectBackend(item.id)
+    if (selectedProjectId.value === item.id) selectedProjectId.value = null
+    ElMessage.success('已删除')
+    await loadProjects()
+    await loadScripts()
+  } catch { /* cancel */ }
+}
+
+// --- Script functions ---
+
+async function loadScripts() {
+  scriptLoading.value = true
+  try {
+    scriptList.value = await ListScripts() || []
+    for (const s of scriptList.value) {
+      await refreshScriptStatus(s.id)
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '加载脚本失败')
+  }
+  scriptLoading.value = false
+}
+
+async function refreshScriptStatus(id: number) {
+  // 前端维护状态，通过事件更新
+}
+
+function openAddScript() {
+  scriptFormIsEdit.value = false
+  scriptForm.value = {
+    id: 0, name: '', command: '', workDir: '', envVars: '', notes: '',
+    projectId: selectedProjectId.value || 0,
+  }
+  scriptFormVisible.value = true
+}
+
+function openEditScript(item: ScriptItem) {
+  scriptFormIsEdit.value = true
+  scriptForm.value = {
+    id: item.id, name: item.name, command: item.command,
+    workDir: item.workDir, envVars: item.envVars, notes: item.notes,
+    projectId: item.projectId || 0,
+  }
+  scriptFormVisible.value = true
+}
+
+async function handleSaveScript() {
+  if (!scriptForm.value.name.trim()) {
+    ElMessage.warning('请输入脚本名称')
+    return
+  }
+  if (!scriptForm.value.command.trim()) {
+    ElMessage.warning('请输入命令')
+    return
+  }
+  try {
+    if (scriptFormIsEdit.value) {
+      await UpdateScriptBackend(
+        scriptForm.value.id,
+        scriptForm.value.name.trim(),
+        scriptForm.value.command.trim(),
+        scriptForm.value.workDir.trim(),
+        scriptForm.value.envVars,
+        scriptForm.value.notes,
+        scriptForm.value.projectId,
+      )
+      ElMessage.success('更新成功')
+    } else {
+      await CreateScript(
+        scriptForm.value.name.trim(),
+        scriptForm.value.command.trim(),
+        scriptForm.value.workDir.trim(),
+        scriptForm.value.envVars,
+        scriptForm.value.notes,
+        scriptForm.value.projectId,
+      )
+      ElMessage.success('创建成功')
+    }
+    scriptFormVisible.value = false
+    await loadScripts()
+    await loadProjects()
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+async function handleDeleteScript(item: ScriptItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除脚本「${item.name}」？${scriptStatuses.value[item.id]?.status === 'running' ? '运行中的进程也会被停止。' : ''}`, '删除脚本', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+    await DeleteScriptBackend(item.id)
+    delete scriptStatuses.value[item.id]
+    ElMessage.success('已删除')
+    await loadScripts()
+    await loadProjects()
+  } catch { /* cancel */ }
+}
+
+async function handleStartScript(id: number) {
+  try {
+    await StartScriptBackend(id)
+    scriptStatuses.value[id] = { status: 'running', pid: 0, exitCode: 0 }
+  } catch (e: any) {
+    ElMessage.error(e.message || '启动失败')
+  }
+}
+
+async function handleStopScript(id: number) {
+  try {
+    await StopScriptBackend(id)
+    scriptStatuses.value[id] = { status: 'stopped', pid: 0, exitCode: 0 }
+  } catch (e: any) {
+    ElMessage.error(e.message || '停止失败')
+  }
+}
+
+async function handleRestartScript(id: number) {
+  try {
+    await RestartScriptBackend(id)
+    scriptStatuses.value[id] = { status: 'running', pid: 0, exitCode: 0 }
+  } catch (e: any) {
+    ElMessage.error(e.message || '重启失败')
+  }
+}
+
+async function openScriptLog(item: ScriptItem) {
+  scriptLogId.value = item.id
+  scriptLogName.value = item.name
+  scriptLogVisible.value = true
+  scriptLogLoading.value = true
+  scriptLogs.value = []
+  try {
+    scriptLogs.value = await GetScriptLogsBackend(item.id) || []
+  } catch { /* ignore */ }
+  scriptLogLoading.value = false
+  await nextTick(() => {
+    if (scriptLogAutoScroll.value) {
+      scrollLogToBottom()
+    }
+  })
+}
+
+async function handleClearLogs() {
+  try {
+    await ClearScriptLogsBackend(scriptLogId.value)
+    scriptLogs.value = []
+    ElMessage.success('日志已清空')
+  } catch (e: any) {
+    ElMessage.error(e.message || '清空失败')
+  }
+}
+
+function scrollLogToBottom() {
+  if (scriptLogRef.value) {
+    scriptLogRef.value.scrollTop = scriptLogRef.value.scrollHeight
+  }
+}
+
+function handleLogScroll() {
+  if (!scriptLogRef.value) return
+  const el = scriptLogRef.value
+  scriptLogAutoScroll.value = (el.scrollTop + el.clientHeight >= el.scrollHeight - 50)
+}
+
+function scriptStatusLabel(status: string): { text: string; type: string } {
+  switch (status) {
+    case 'running': return { text: '运行中', type: 'success' }
+    case 'exited': return { text: '已退出', type: 'danger' }
+    default: return { text: '已停止', type: 'info' }
+  }
+}
+
+async function handleScriptBrowseDir() {
+  try {
+    const dir = await SelectDirDialog()
+    if (dir) scriptForm.value.workDir = dir
+  } catch { /* ignore */ }
+}
+
 // ==================== Init ====================
 let unlistenProgress: (() => void) | null = null
+let unlistenScriptLog: (() => void) | null = null
+let unlistenScriptStatus: (() => void) | null = null
 
 onMounted(async () => {
   initialized.value = await IsInitialized()
@@ -1373,10 +1673,40 @@ onMounted(async () => {
   unlistenProgress = EventsOn('sdk:progress', (event: any) => {
     installProgress.value = { visible: true, phase: event.phase, message: event.message, percent: event.percent }
   })
+
+  // Script Console events
+  unlistenScriptLog = EventsOn('script:log', (event: any) => {
+    if (event.id === scriptLogId.value && scriptLogVisible.value) {
+      scriptLogs.value.push({
+        id: 0,
+        scriptId: event.id,
+        text: event.text,
+        source: event.source,
+        timestamp: event.timestamp,
+      })
+      nextTick(() => {
+        if (scriptLogAutoScroll.value) scrollLogToBottom()
+      })
+    }
+    // 同时更新状态为 running
+    if (scriptStatuses.value[event.id]) {
+      scriptStatuses.value[event.id].status = 'running'
+    }
+  })
+
+  unlistenScriptStatus = EventsOn('script:status', (event: any) => {
+    scriptStatuses.value[event.id] = {
+      status: event.status,
+      pid: event.pid || 0,
+      exitCode: event.exitCode || 0,
+    }
+  })
 })
 
 onUnmounted(() => {
   if (typeof unlistenProgress === 'function') unlistenProgress()
+  if (typeof unlistenScriptLog === 'function') unlistenScriptLog()
+  if (typeof unlistenScriptStatus === 'function') unlistenScriptStatus()
 })
 
 // ==================== Auth ====================
@@ -1848,6 +2178,15 @@ function openUrl(url: string) {
             <el-icon size="20"><Setting /></el-icon>
           </div>
         </el-tooltip>
+        <el-tooltip content="脚本控制台" placement="right">
+          <div
+            class="nav-rail-item"
+            :class="{ active: currentTool === 'console' }"
+            @click="currentTool = 'console'; loadProjects(); loadScripts()"
+          >
+            <el-icon size="20"><Monitor /></el-icon>
+          </div>
+        </el-tooltip>
       </div>
     </nav>
 
@@ -1856,7 +2195,7 @@ function openUrl(url: string) {
       <!-- Header -->
       <header class="header">
         <div class="header-left">
-          <h1 class="header-title">{{ currentTool === 'vault' ? '密码保险箱' : currentTool === 'env' ? '环境变量' : currentTool === 'opencode' ? 'OpenCode 配置' : '环境管理' }}</h1>
+          <h1 class="header-title">{{ currentTool === 'vault' ? '密码保险箱' : currentTool === 'env' ? '环境变量' : currentTool === 'opencode' ? 'OpenCode 配置' : currentTool === 'console' ? '脚本控制台' : '环境管理' }}</h1>
         </div>
         <div class="header-actions" v-if="currentTool === 'vault' && unlocked">
           <el-input v-model="searchQuery" placeholder="搜索..." clearable class="search-input">
@@ -1923,6 +2262,14 @@ function openUrl(url: string) {
               <el-icon><Check /></el-icon><span>保存</span>
             </el-button>
           </template>
+        </div>
+        <div class="header-actions" v-if="currentTool === 'console'">
+          <el-button type="primary" @click="openAddScript" class="btn-add">
+            <el-icon><Plus /></el-icon><span>新增脚本</span>
+          </el-button>
+          <el-button @click="loadScripts" class="btn-add">
+            <el-icon><Refresh /></el-icon><span>刷新</span>
+          </el-button>
         </div>
       </header>
 
@@ -2646,6 +2993,181 @@ function openUrl(url: string) {
         </main>
       </div>
     </template>
+
+    <!-- ==================== SCRIPT CONSOLE TOOL ==================== -->
+    <template v-if="currentTool === 'console'">
+      <div class="body" v-loading="scriptLoading">
+        <!-- Project Sidebar -->
+        <aside class="sidebar">
+          <div class="sidebar-section">
+            <div
+              class="sidebar-item"
+              :class="{ active: selectedProjectId === null }"
+              @click="selectedProjectId = null"
+            >
+              <el-icon><Grid /></el-icon>
+              <span class="sidebar-label">全部脚本</span>
+              <span class="sidebar-count">{{ scriptList.length }}</span>
+            </div>
+          </div>
+
+          <div class="sidebar-section">
+            <div class="sidebar-section-header">
+              <span class="sidebar-section-title">项目</span>
+              <el-button text size="small" @click="openAddProject()" class="sidebar-add-btn">
+                <el-icon><Plus /></el-icon>
+              </el-button>
+            </div>
+            <div class="project-list">
+              <div
+                v-for="proj in projectList"
+                :key="proj.id"
+                class="sidebar-item"
+                :class="{ active: selectedProjectId === proj.id }"
+                @click="selectedProjectId = proj.id"
+              >
+                <el-icon size="14" style="color: var(--primary)"><Folder /></el-icon>
+                <span class="sidebar-label">{{ proj.name }}</span>
+                <span class="sidebar-count">{{ proj.scriptCount }}</span>
+                <el-icon size="12" class="tag-edit" @click.stop="openEditProject(proj)"><Edit /></el-icon>
+                <el-icon size="12" class="tag-delete" @click.stop="handleDeleteProject(proj)"><Delete /></el-icon>
+              </div>
+            </div>
+            <div class="sidebar-empty" v-if="projectList.length === 0">
+              暂无项目
+            </div>
+          </div>
+
+          <div class="sidebar-section" v-if="selectedProjectId !== null">
+            <div class="sidebar-item" style="color: var(--text-muted); font-size: 12px; padding: 6px 16px">
+              <el-icon size="12"><InfoFilled /></el-icon>
+              <span>点击「全部脚本」返回</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" style="flex: 1">
+          <div class="content-header">
+            <h2 class="content-title">{{ selectedProjectId ? (projectList.find(p => p.id === selectedProjectId)?.name || '项目') : '全部脚本' }}</h2>
+            <span class="content-count">{{ filteredScriptList.length }} 个脚本</span>
+          </div>
+          <div v-if="filteredScriptList.length > 0" class="console-script-list">
+            <div
+              v-for="item in filteredScriptList"
+              :key="item.id"
+              class="console-script-card"
+              :class="{ 'console-script-running': scriptStatuses[item.id]?.status === 'running' }"
+            >
+              <div class="console-script-header">
+                <div class="console-script-icon" :class="{ running: scriptStatuses[item.id]?.status === 'running' }">
+                  <el-icon size="18"><Cpu /></el-icon>
+                </div>
+                <div class="console-script-info">
+                  <div class="console-script-name">
+                    {{ item.name }}
+                    <el-tag v-if="item.projectName && selectedProjectId === null" size="small" effect="plain" style="margin-left: 6px; font-size: 11px">
+                      {{ item.projectName }}
+                    </el-tag>
+                  </div>
+                  <div class="console-script-cmd" :title="item.command">{{ item.command }}</div>
+                </div>
+                <div class="console-script-status">
+                  <el-tag
+                    v-if="scriptStatuses[item.id]"
+                    :type="scriptStatusLabel(scriptStatuses[item.id].status).type as any"
+                    size="small"
+                    effect="light"
+                  >
+                    {{ scriptStatusLabel(scriptStatuses[item.id].status).text }}
+                  </el-tag>
+                  <el-tag v-else type="info" size="small" effect="light">已停止</el-tag>
+                  <span v-if="scriptStatuses[item.id]?.pid" class="console-script-pid">PID: {{ scriptStatuses[item.id].pid }}</span>
+                </div>
+              </div>
+              <div class="console-script-meta" v-if="item.workDir || item.notes">
+                <span v-if="item.workDir" class="console-script-workdir" :title="item.workDir">
+                  <el-icon size="12"><Folder /></el-icon>{{ item.workDir }}
+                </span>
+                <span v-if="item.notes" class="console-script-notes">{{ item.notes }}</span>
+              </div>
+              <div class="console-script-actions">
+                <el-button
+                  v-if="scriptStatuses[item.id]?.status !== 'running'"
+                  type="success"
+                  text
+                  size="small"
+                  @click="handleStartScript(item.id)"
+                  class="action-btn"
+                >
+                  <el-icon><VideoPlay /></el-icon><span>启动</span>
+                </el-button>
+                <el-button
+                  v-if="scriptStatuses[item.id]?.status === 'running'"
+                  type="danger"
+                  text
+                  size="small"
+                  @click="handleStopScript(item.id)"
+                  class="action-btn"
+                >
+                  <el-icon><VideoPause /></el-icon><span>停止</span>
+                </el-button>
+                <el-button
+                  v-if="scriptStatuses[item.id]?.status === 'running'"
+                  text
+                  size="small"
+                  @click="handleRestartScript(item.id)"
+                  class="action-btn"
+                >
+                  <el-icon><RefreshRight /></el-icon><span>重启</span>
+                </el-button>
+                <el-button text size="small" @click="openScriptLog(item)" class="action-btn action-primary">
+                  <el-icon><Document /></el-icon><span>日志</span>
+                </el-button>
+                <div class="action-spacer"></div>
+                <el-button text size="small" @click="openEditScript(item)" class="action-btn">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button text size="small" @click="handleDeleteScript(item)" class="action-btn action-danger">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+          </div>
+          <div class="empty-state" v-else-if="!scriptLoading">
+            <div class="empty-icon"><el-icon size="48"><Monitor /></el-icon></div>
+            <h3 class="empty-title">暂无脚本</h3>
+            <p class="empty-desc">点击「新增脚本」添加你的第一个命令或程序</p>
+            <el-button type="primary" size="large" @click="openAddScript" round>
+              <el-icon><Plus /></el-icon> 添加脚本
+            </el-button>
+          </div>
+        </main>
+      </div>
+    </template>
+
+    <!-- Project Dialog -->
+    <el-dialog
+      v-model="projectFormVisible"
+      :title="projectFormIsEdit ? '编辑项目' : '新增项目'"
+      width="420px"
+      align-center
+    >
+      <el-form label-position="top">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="projectForm.name" placeholder="如：My Web App" size="large" @keyup.enter="handleSaveProject" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="projectForm.notes" placeholder="备注信息（可选）" size="large" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="projectFormVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="handleSaveProject" style="flex: 1">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <!-- Runtime Config Dialog -->
     <el-dialog v-model="configDialogVisible" title="环境管理配置" width="420px" align-center>
@@ -3537,6 +4059,133 @@ function openUrl(url: string) {
         </div>
       </template>
     </el-dialog>
+    <!-- Script Edit/Create Dialog -->
+    <el-dialog
+      v-model="scriptFormVisible"
+      :title="scriptFormIsEdit ? '编辑脚本' : '新增脚本'"
+      width="560px"
+      align-center
+    >
+      <el-form label-position="top">
+        <el-form-item label="名称" required>
+          <el-input v-model="scriptForm.name" placeholder="如：Dev Server" size="large" @keyup.enter="handleSaveScript" />
+        </el-form-item>
+        <el-form-item label="命令" required>
+          <el-input
+            v-model="scriptForm.command"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 6 }"
+            placeholder="完整命令行，如：node server.js 或 python -m http.server 8000"
+          />
+        </el-form-item>
+        <el-form-item label="所属项目">
+          <el-select v-model="scriptForm.projectId" placeholder="无（未分类）" clearable size="large" style="width: 100%">
+            <el-option v-for="p in projectList" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作目录">
+          <div class="config-dir-row">
+            <el-input v-model="scriptForm.workDir" placeholder="留空则使用当前目录" size="large" />
+            <el-button size="large" @click="handleScriptBrowseDir">
+              <el-icon><FolderOpened /></el-icon>
+            </el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="环境变量">
+          <el-input
+            v-model="scriptForm.envVars"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 4 }"
+            placeholder='JSON 格式：[{"key":"PORT","value":"3000"}]（可选）'
+          />
+          <div class="form-hint">可选，JSON 格式的键值对数组</div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="scriptForm.notes" placeholder="备注信息（可选）" size="large" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button size="large" @click="scriptFormVisible = false" style="flex: 1">取消</el-button>
+          <el-button type="primary" size="large" @click="handleSaveScript" style="flex: 1">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- Script Log Dialog -->
+    <el-dialog
+      v-model="scriptLogVisible"
+      :title="`日志 — ${scriptLogName}`"
+      width="80%"
+      top="5vh"
+      :close-on-click-modal="false"
+      class="script-log-dialog"
+    >
+      <div class="script-log-toolbar">
+        <el-tag
+          v-if="scriptStatuses[scriptLogId]"
+          :type="scriptStatusLabel(scriptStatuses[scriptLogId].status).type as any"
+          size="small"
+          effect="plain"
+        >
+          {{ scriptStatusLabel(scriptStatuses[scriptLogId].status).text }}
+        </el-tag>
+        <span class="script-log-count">{{ scriptLogs.length }} 条日志</span>
+        <div style="flex:1"></div>
+        <el-button size="small" text @click="handleClearLogs">
+          <el-icon><Delete /></el-icon><span>清空</span>
+        </el-button>
+        <el-button
+          size="small"
+          :type="scriptLogAutoScroll ? 'primary' : undefined"
+          text
+          @click="scriptLogAutoScroll = true"
+        >
+          <el-icon><Bottom /></el-icon><span>自动滚动</span>
+        </el-button>
+      </div>
+      <div
+        ref="scriptLogRef"
+        class="script-log-viewer"
+        @scroll="handleLogScroll"
+        v-loading="scriptLogLoading"
+      >
+        <div
+          v-for="(line, idx) in scriptLogs"
+          :key="idx"
+          class="script-log-line"
+          :class="{ 'script-log-stderr': line.source === 'stderr', 'script-log-system': line.source === 'system' }"
+        >
+          <span class="script-log-time">{{ line.timestamp }}</span>
+          <span class="script-log-text">{{ line.text }}</span>
+        </div>
+        <div v-if="scriptLogs.length === 0 && !scriptLogLoading" class="script-log-empty">
+          暂无日志
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 12px; width: 100%">
+          <el-button
+            v-if="scriptStatuses[scriptLogId]?.status === 'running'"
+            type="danger"
+            size="large"
+            @click="handleStopScript(scriptLogId)" style="flex: 1"
+          >
+            <el-icon><VideoPause /></el-icon><span>停止</span>
+          </el-button>
+          <el-button
+            v-else
+            type="success"
+            size="large"
+            @click="handleStartScript(scriptLogId)" style="flex: 1"
+          >
+            <el-icon><VideoPlay /></el-icon><span>启动</span>
+          </el-button>
+          <el-button size="large" @click="scriptLogVisible = false" style="flex: 1">关闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     </div><!-- close app-main -->
   </div>
 </template>
@@ -5179,5 +5828,222 @@ function openUrl(url: string) {
   font-size: 12px;
   flex-shrink: 0;
   margin-top: 16px;
+}
+
+/* ===== Script Console ===== */
+.console-script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-list {
+  padding: 0 4px;
+}
+
+.console-script-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 16px;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.console-script-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.console-script-card.console-script-running {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: #f0fdf4;
+}
+
+.console-script-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.console-script-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.console-script-icon.running {
+  background: var(--success);
+  color: #fff;
+  animation: console-pulse 2s infinite;
+}
+
+@keyframes console-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+.console-script-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.console-script-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.console-script-cmd {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.console-script-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.console-script-pid {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+.console-script-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-left: 50px;
+  flex-wrap: wrap;
+}
+
+.console-script-workdir {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.console-script-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.console-script-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+/* Script Log Dialog */
+.script-log-dialog :deep(.el-dialog__body) {
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.script-log-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.script-log-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.script-log-viewer {
+  flex: 1;
+  height: 50vh;
+  overflow-y: auto;
+  background: #1e1e2e;
+  padding: 12px 16px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.script-log-line {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  color: #cdd6f4;
+}
+
+.script-log-time {
+  color: #6c7086;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.script-log-text {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.script-log-line.script-log-stderr .script-log-text {
+  color: #f38ba8;
+}
+
+.script-log-line.script-log-system .script-log-text {
+  color: #89b4fa;
+  font-style: italic;
+}
+
+.script-log-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #6c7086;
+  font-size: 14px;
+}
+
+/* Script Log Dialog custom scrollbar */
+.script-log-viewer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.script-log-viewer::-webkit-scrollbar-track {
+  background: #181825;
+}
+
+.script-log-viewer::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 4px;
+}
+
+.script-log-viewer::-webkit-scrollbar-thumb:hover {
+  background: #585b70;
 }
 </style>
