@@ -241,6 +241,8 @@ export namespace models {
 	    workDir: string;
 	    envVars: string;
 	    notes: string;
+	    elevated: boolean;
+	    keepWindow: boolean;
 	    projectId?: number;
 	    projectName: string;
 	    createdAt: string;
@@ -257,6 +259,8 @@ export namespace models {
 	        this.workDir = source["workDir"];
 	        this.envVars = source["envVars"];
 	        this.notes = source["notes"];
+	        this.elevated = source["elevated"];
+	        this.keepWindow = source["keepWindow"];
 	        this.projectId = source["projectId"];
 	        this.projectName = source["projectName"];
 	        this.createdAt = source["createdAt"];

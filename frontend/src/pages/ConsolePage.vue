@@ -37,6 +37,7 @@ import {
   handleClearLogs,
   scrollLogToBottom,
   handleLogScroll,
+  openLogUrl,
   scriptStatusLabel,
   handleScriptBrowseDir,
   setupEventListeners,
@@ -108,8 +109,13 @@ onUnmounted(() => {
     <!-- Main Content -->
     <main class="main-content">
       <div class="content-header">
-        <h2 class="content-title">{{ selectedProjectId ? (projectList.find(p => p.id === selectedProjectId)?.name || '项目') : '全部脚本' }}</h2>
-        <span class="content-count">{{ filteredScriptList.length }} 个脚本</span>
+        <div class="content-header-info">
+          <h2 class="content-title">{{ selectedProjectId ? (projectList.find(p => p.id === selectedProjectId)?.name || '项目') : '全部脚本' }}</h2>
+          <span class="content-count">{{ filteredScriptList.length }} 个脚本</span>
+        </div>
+        <el-button type="primary" size="small" @click="openAddScript">
+          <el-icon><Plus /></el-icon><span>新增脚本</span>
+        </el-button>
       </div>
       <div v-if="filteredScriptList.length > 0" class="console-script-list">
         <div
@@ -134,11 +140,11 @@ onUnmounted(() => {
             <div class="console-script-status">
               <el-tag
                 v-if="scriptStatuses[item.id]"
-                :type="scriptStatusLabel(scriptStatuses[item.id].status).type as any"
+                :type="scriptStatusLabel(scriptStatuses[item.id]).type as any"
                 size="small"
                 effect="light"
               >
-                {{ scriptStatusLabel(scriptStatuses[item.id].status).text }}
+                {{ scriptStatusLabel(scriptStatuses[item.id]).text }}
               </el-tag>
               <el-tag v-else type="info" size="small" effect="light">已停止</el-tag>
               <span v-if="scriptStatuses[item.id]?.pid" class="console-script-pid">PID: {{ scriptStatuses[item.id].pid }}</span>
@@ -164,6 +170,7 @@ onUnmounted(() => {
             <el-button
               v-if="scriptStatuses[item.id]?.status === 'running'"
               type="danger"
+              :disabled="item.elevated"
               text
               size="small"
               @click="handleStopScript(item.id)"
@@ -173,6 +180,7 @@ onUnmounted(() => {
             </el-button>
             <el-button
               v-if="scriptStatuses[item.id]?.status === 'running'"
+              :disabled="item.elevated"
               text
               size="small"
               @click="handleRestartScript(item.id)"
@@ -180,6 +188,7 @@ onUnmounted(() => {
             >
               <el-icon><RefreshRight /></el-icon><span>重启</span>
             </el-button>
+            <span v-if="item.elevated && scriptStatuses[item.id]?.status === 'running'" class="action-hint">管理员脚本请在外部窗口手动关闭</span>
             <el-button text size="small" @click="openScriptLog(item)" class="action-btn action-primary">
               <el-icon><Document /></el-icon><span>日志</span>
             </el-button>
@@ -268,6 +277,22 @@ onUnmounted(() => {
         />
         <div class="form-hint">可选，JSON 格式的键值对数组</div>
       </el-form-item>
+      <el-form-item>
+        <div class="switch-row">
+          <el-switch v-model="scriptForm.elevated" />
+          <span class="switch-label">以管理员身份运行</span>
+        </div>
+        <div class="form-hint">
+          该脚本将以独立窗口启动，日志可能无法完整回传。
+        </div>
+        <div class="switch-row switch-row-secondary">
+          <el-switch v-model="scriptForm.keepWindow" :disabled="!scriptForm.elevated" />
+          <span class="switch-label">退出后保留管理员窗口</span>
+        </div>
+        <div class="form-hint">
+          便于调试，脚本结束后不自动关闭窗口。
+        </div>
+      </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="scriptForm.notes" placeholder="备注信息（可选）" size="large" />
       </el-form-item>
@@ -292,11 +317,11 @@ onUnmounted(() => {
     <div class="script-log-toolbar">
       <el-tag
         v-if="scriptStatuses[scriptLogId]"
-        :type="scriptStatusLabel(scriptStatuses[scriptLogId].status).type as any"
+        :type="scriptStatusLabel(scriptStatuses[scriptLogId]).type as any"
         size="small"
         effect="plain"
       >
-        {{ scriptStatusLabel(scriptStatuses[scriptLogId].status).text }}
+        {{ scriptStatusLabel(scriptStatuses[scriptLogId]).text }}
       </el-tag>
       <span class="script-log-count">{{ scriptLogs.length }} 条日志</span>
       <div style="flex:1"></div>
@@ -325,7 +350,18 @@ onUnmounted(() => {
         :class="{ 'script-log-stderr': line.source === 'stderr', 'script-log-system': line.source === 'system' }"
       >
         <span class="script-log-time">{{ line.timestamp }}</span>
-        <span class="script-log-text">{{ line.text }}</span>
+        <span class="script-log-text">
+          <template v-for="(segment, segmentIdx) in line.segments" :key="segmentIdx">
+            <a
+              v-if="segment.url"
+              class="script-log-link"
+              :href="segment.url"
+              :style="segment.style"
+              @click.prevent="openLogUrl(segment.url)"
+            >{{ segment.text }}</a>
+            <span v-else :style="segment.style">{{ segment.text }}</span>
+          </template>
+        </span>
       </div>
       <div v-if="scriptLogs.length === 0 && !scriptLogLoading" class="script-log-empty">
         暂无日志
@@ -333,8 +369,15 @@ onUnmounted(() => {
     </div>
     <template #footer>
       <div style="display: flex; gap: 12px; width: 100%">
+        <el-tooltip v-if="scriptStatuses[scriptLogId]?.status === 'running' && scriptList.find(s => s.id === scriptLogId)?.elevated" content="管理员脚本请在外部窗口手动关闭" placement="top">
+          <span style="flex: 1">
+            <el-button type="danger" size="large" disabled style="width: 100%">
+              <el-icon><VideoPause /></el-icon><span>停止</span>
+            </el-button>
+          </span>
+        </el-tooltip>
         <el-button
-          v-if="scriptStatuses[scriptLogId]?.status === 'running'"
+          v-else-if="scriptStatuses[scriptLogId]?.status === 'running'"
           type="danger"
           size="large"
           @click="handleStopScript(scriptLogId)" style="flex: 1"
@@ -470,8 +513,16 @@ onUnmounted(() => {
 .content-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
+}
+
+.content-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .content-title {
@@ -628,6 +679,7 @@ onUnmounted(() => {
 .action-primary:hover { background: var(--primary-bg) !important; }
 .action-danger:hover { color: var(--danger) !important; background: #fef2f2 !important; }
 .action-spacer { flex: 1; }
+.action-hint { color: var(--text-muted); font-size: 12px; align-self: center; }
 
 /* ===== Empty State ===== */
 .empty-state {
@@ -680,6 +732,21 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
+.switch-row {
+  display: flex;
+  align-items: center;
+}
+
+.switch-row-secondary {
+  margin-top: 8px;
+}
+
+.switch-label {
+  margin-left: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
 /* ===== Script Log Dialog ===== */
 .script-log-dialog :deep(.el-dialog__body) {
   padding: 0 !important;
@@ -728,6 +795,17 @@ onUnmounted(() => {
 .script-log-text {
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.script-log-link {
+  color: #74c7ec;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.script-log-link:hover {
+  color: #89dceb;
 }
 
 .script-log-line.script-log-stderr .script-log-text {

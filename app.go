@@ -60,8 +60,8 @@ func (a *App) ListSDKs() []runtime.SDKInfo {
 func (a *App) InstallSDK(sdkType string, version string) error {
 	opts := runtime.InstallOptions{
 		SDKType: runtime.SDKType(sdkType),
-		Version:  version,
-		Ctx:      a.ctx,
+		Version: version,
+		Ctx:     a.ctx,
 	}
 	return runtime.Install(opts)
 }
@@ -295,7 +295,7 @@ func (a *App) GetOpenCodeSkills() ([]opencode.SkillInfo, error) {
 
 // MCPSkillResult wraps both lists for Wails (can't return multiple values)
 type MCPSkillResult struct {
-	MCPs   []opencode.MCPInfo  `json:"mcps"`
+	MCPs   []opencode.MCPInfo   `json:"mcps"`
 	Skills []opencode.SkillInfo `json:"skills"`
 }
 
@@ -371,13 +371,15 @@ func (a *App) ListScripts() []models.ScriptDTO {
 	return result
 }
 
-func (a *App) CreateScript(name string, command string, workDir string, envVars string, notes string, projectID uint) (models.ScriptDTO, error) {
+func (a *App) CreateScript(name string, command string, workDir string, envVars string, notes string, elevated bool, keepWindow bool, projectID uint) (models.ScriptDTO, error) {
 	script := models.Script{
-		Name:    name,
-		Command: command,
-		WorkDir: workDir,
-		EnvVars: envVars,
-		Notes:   notes,
+		Name:       name,
+		Command:    command,
+		WorkDir:    workDir,
+		EnvVars:    envVars,
+		Notes:      notes,
+		Elevated:   elevated,
+		KeepWindow: keepWindow,
 	}
 	if projectID > 0 {
 		script.ProjectID = &projectID
@@ -388,13 +390,15 @@ func (a *App) CreateScript(name string, command string, workDir string, envVars 
 	return *script.ToDTO(), nil
 }
 
-func (a *App) UpdateScript(id uint, name string, command string, workDir string, envVars string, notes string, projectID uint) error {
+func (a *App) UpdateScript(id uint, name string, command string, workDir string, envVars string, notes string, elevated bool, keepWindow bool, projectID uint) error {
 	updates := map[string]interface{}{
-		"name":     name,
-		"command":  command,
-		"work_dir": workDir,
-		"env_vars": envVars,
-		"notes":    notes,
+		"name":        name,
+		"command":     command,
+		"work_dir":    workDir,
+		"env_vars":    envVars,
+		"notes":       notes,
+		"elevated":    elevated,
+		"keep_window": keepWindow,
 	}
 	if projectID > 0 {
 		updates["project_id"] = projectID
@@ -417,7 +421,7 @@ func (a *App) StartScript(id uint) error {
 		return errors.New("脚本不存在")
 	}
 	mgr := process.GetManager(a.ctx)
-	return mgr.Start(id, script.Command, script.WorkDir, script.EnvVars)
+	return mgr.Start(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
 }
 
 func (a *App) StopScript(id uint) error {
@@ -431,7 +435,7 @@ func (a *App) RestartScript(id uint) error {
 		return errors.New("脚本不存在")
 	}
 	mgr := process.GetManager(a.ctx)
-	return mgr.Restart(id, script.Command, script.WorkDir, script.EnvVars)
+	return mgr.Restart(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
 }
 
 func (a *App) GetScriptStatus(id uint) models.ScriptStatusDTO {

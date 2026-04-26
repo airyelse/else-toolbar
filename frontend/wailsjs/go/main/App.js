@@ -26,8 +26,8 @@ export function CreateProject(arg1, arg2) {
   return window['go']['main']['App']['CreateProject'](arg1, arg2);
 }
 
-export function CreateScript(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3, arg4, arg5, arg6);
+export function CreateScript(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
+  return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
 export function CreateTag(arg1, arg2) {
@@ -358,8 +358,8 @@ export function UpdateProject(arg1, arg2, arg3) {
   return window['go']['main']['App']['UpdateProject'](arg1, arg2, arg3);
 }
 
-export function UpdateScript(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
-  return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+export function UpdateScript(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
+  return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 
 export function UpdateTag(arg1, arg2, arg3) {

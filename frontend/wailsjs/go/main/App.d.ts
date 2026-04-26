@@ -19,7 +19,7 @@ export function CreateEntry(arg1:models.EntryDTO):Promise<void>;
 
 export function CreateProject(arg1:string,arg2:string):Promise<models.ProjectDTO>;
 
-export function CreateScript(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:number):Promise<models.ScriptDTO>;
+export function CreateScript(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:boolean,arg7:boolean,arg8:number):Promise<models.ScriptDTO>;
 
 export function CreateTag(arg1:string,arg2:string):Promise<void>;
 
@@ -185,7 +185,7 @@ export function UpdateEntry(arg1:models.EntryDTO):Promise<void>;
 
 export function UpdateProject(arg1:number,arg2:string,arg3:string):Promise<void>;
 
-export function UpdateScript(arg1:number,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
+export function UpdateScript(arg1:number,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:boolean,arg8:boolean,arg9:number):Promise<void>;
 
 export function UpdateTag(arg1:number,arg2:string,arg3:string):Promise<void>;
 

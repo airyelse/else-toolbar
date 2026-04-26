@@ -6,9 +6,20 @@ import RuntimePage from './pages/RuntimePage.vue'
 import OpenCodePage from './pages/OpenCodePage.vue'
 import ConsolePage from './pages/ConsolePage.vue'
 import {
+  ocActiveTab,
+  ocOpenCodeSubTab,
+  slimSubTab,
+  ocDirty,
+  ocModelsLoading,
+  handleRefreshModels,
+  saveOpenCodeConfig,
+} from './composables/useOpenCode'
+import {
   Box,
+  Check,
   Lock,
   Monitor,
+  RefreshRight,
   Setting,
 } from '@element-plus/icons-vue'
 
@@ -59,6 +70,25 @@ const toolMeta: Record<Tool, { label: string; icon: any }> = {
       <header class="header">
         <div class="header-left">
           <h1 class="header-title">{{ toolMeta[currentTool]?.label }}</h1>
+        </div>
+        <div class="header-actions">
+          <el-button
+            v-if="currentTool === 'opencode' && (ocOpenCodeSubTab === 'model' || (ocActiveTab === 'slim' && slimSubTab === 'agent'))"
+            size="small"
+            :loading="ocModelsLoading"
+            @click="handleRefreshModels"
+          >
+            <el-icon v-if="!ocModelsLoading"><RefreshRight /></el-icon><span>刷新模型</span>
+          </el-button>
+          <el-button
+            v-if="currentTool === 'opencode' && ocActiveTab === 'slim' && slimSubTab === 'agent'"
+            type="primary"
+            size="small"
+            @click="saveOpenCodeConfig"
+            :disabled="!ocDirty"
+          >
+            <el-icon><Check /></el-icon><span>保存配置</span>
+          </el-button>
         </div>
       </header>
 
@@ -180,6 +210,12 @@ const toolMeta: Record<Tool, { label: string; icon: any }> = {
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ===== Body Layout ===== */
