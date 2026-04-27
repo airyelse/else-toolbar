@@ -13,6 +13,9 @@ frontend/package.json.md5
 node_modules
 frontend/dist
 
+# Wails auto-generated bindings
+frontend/wailsjs/
+
 # Editor / IDE
 .claude/
 .vscode/
