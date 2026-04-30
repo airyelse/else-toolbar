@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"else-toolbox/internal/cmdutil"
 )
 
 // AgentConfig 单个 Agent 的配置
@@ -644,7 +646,9 @@ type SkillInfo struct {
 
 // ReadMCPConfig reads MCP servers from the resolved opencode config (includes plugin MCPs)
 func ReadMCPConfig() ([]MCPInfo, error) {
-	out, err := exec.Command("opencode", "debug", "config").Output()
+	cmd := exec.Command("opencode", "debug", "config")
+	cmdutil.HideWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode debug config 失败: %w", err)
 	}
@@ -702,7 +706,9 @@ func ReadMCPConfig() ([]MCPInfo, error) {
 
 // ReadSkills reads all skills from the resolved opencode debug skill output
 func ReadSkills() ([]SkillInfo, error) {
-	out, err := exec.Command("opencode", "debug", "skill").Output()
+	cmd := exec.Command("opencode", "debug", "skill")
+	cmdutil.HideWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode debug skill 失败: %w", err)
 	}
@@ -957,7 +963,9 @@ func ForceRefreshModels() ([]string, error) {
 }
 
 func refreshModels() ([]string, error) {
-	out, err := exec.Command("opencode", "models", "--refresh").CombinedOutput()
+	cmd := exec.Command("opencode", "models", "--refresh")
+	cmdutil.HideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode models 失败: %w", err)
 	}

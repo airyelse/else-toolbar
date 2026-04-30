@@ -107,6 +107,7 @@ func (m *Manager) Start(scriptID uint, command string, workDir string, envVarsJS
 	var cmd *exec.Cmd
 	if isWindows {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	} else {
 		// 解析命令
 		parts := strings.Fields(command)
@@ -480,6 +481,7 @@ func (m *Manager) waitForElevatedExit(scriptID uint, handle windows.Handle) {
 
 func killProcessTree(pid int) error {
 	cmd := exec.Command("taskkill", "/PID", fmt.Sprintf("%d", pid), "/T", "/F")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -489,6 +491,7 @@ func waitForProcessExit(pid int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		probe := exec.Command("cmd", "/C", fmt.Sprintf("tasklist /FI \"PID eq %d\" /NH", pid))
+		probe.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		out, err := probe.Output()
 		if err != nil {
 			return nil

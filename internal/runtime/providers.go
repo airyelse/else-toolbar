@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"else-toolbox/internal/cmdutil"
 )
 
 // ==================== Provider Interface ====================
@@ -256,6 +258,7 @@ func copyDir(src, dst string) error {
 
 func execCommand(cmd string) error {
 	c := exec.Command("cmd", "/c", cmd)
+	cmdutil.HideWindow(c)
 	c.Stdout = nil
 	c.Stderr = nil
 	if err := c.Run(); err != nil {
