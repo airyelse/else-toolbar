@@ -16,7 +16,7 @@ import {
   ExpandEnvValue,
   OpenInExplorer,
   GetRuntimeConfig,
-} from '../../wailsjs/go/main/App'
+} from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
 export interface PathEntryItem {
@@ -49,7 +49,7 @@ const userPathEntries = ref<PathEntryItem[]>([])
 const userPathStrings = ref<string[]>([])
 const pathSearch = ref('')
 const pathLoading = ref(false)
-const pathTab = ref<'system' | 'user'>('user')
+const activeTab = ref<'userPath' | 'userVars' | 'systemPath' | 'systemVars'>('userPath')
 const pathDirty = ref(false)
 const pathEditIdx = ref(-1)
 const pathEditVal = ref('')
@@ -89,8 +89,8 @@ async function loadPathEntries() {
   pathDirty.value = false
   try {
     const result = await GetPathResult()
-    systemPathEntries.value = result?.system || []
-    userPathEntries.value = result?.user || []
+    systemPathEntries.value = (result?.system || []).filter((e: any) => e != null) as PathEntryItem[]
+    userPathEntries.value = (result?.user || []).filter((e: any) => e != null) as PathEntryItem[]
     userPathStrings.value = userPathEntries.value.map(e => e.rawPath || e.path)
   } catch (e: any) {
     ElMessage.error(e.message || '加载 PATH 失败')
@@ -335,9 +335,10 @@ async function handleUpdateProfilePaths(name: string) {
 
 // ==================== Environment Variables State ====================
 const envList = ref<EnvVarItem[]>([])
+const userEnvList = ref<EnvVarItem[]>([])
+const systemEnvList = ref<EnvVarItem[]>([])
 const envLoading = ref(false)
 const envSearch = ref('')
-const envTab = ref<'user' | 'system'>('user')
 // Key fix: Use name-based instead of index-based
 const envEditingName = ref('')
 const envEditName = ref('')
@@ -347,38 +348,54 @@ const envAddVisible = ref(false)
 const envAddName = ref('')
 const envAddValue = ref('')
 
-// PATH detail view (when user clicks on PATH)
-const pathDetailView = ref(false)
-
 // ELSE_RUNTIME_PATH hint
 const showRuntimePathHint = ref(false)
 const runtimePathValue = ref('')
 
-const filteredEnvList = computed(() => {
-  if (!envSearch.value) return envList.value
+function sortEnvItems(items: EnvVarItem[]) {
+  items.sort((a, b) => {
+    if (a.isPath !== b.isPath) return a.isPath ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function filterEnvList(list: EnvVarItem[]) {
+  const source = list.filter(e => !e.isPath)
+  if (!envSearch.value) return source
   const q = envSearch.value.toLowerCase()
-  return envList.value.filter(e =>
+  return source.filter(e =>
     e.name.toLowerCase().includes(q) || e.value.toLowerCase().includes(q)
   )
-})
+}
+
+const filteredUserEnvList = computed(() => filterEnvList(userEnvList.value))
+const filteredSystemEnvList = computed(() => filterEnvList(systemEnvList.value))
+const activeEnvList = computed(() => activeTab.value === 'systemVars' ? filteredSystemEnvList.value : filteredUserEnvList.value)
 
 async function loadEnvVars() {
   envLoading.value = true
-  pathDetailView.value = false
   try {
     const result = await ListEnvVars()
-    const source = envTab.value === 'user' ? (result?.user || []) : (result?.system || [])
-    const items: EnvVarItem[] = []
-    for (const v of source) {
-      const expanded = await ExpandEnvValue(v.value)
-      items.push({ name: v.name, value: v.value, expandedValue: expanded, isPath: v.isPath })
-    }
-    // Sort: PATH first, then alphabetical by name
-    items.sort((a, b) => {
-      if (a.isPath !== b.isPath) return a.isPath ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
-    envList.value = items
+    const buildItems = async (source: any[]) => Promise.all(source.map(async (v) => ({
+      name: v.name,
+      value: v.value,
+      expandedValue: await ExpandEnvValue(v.value),
+      isPath: v.isPath,
+    })))
+
+    const [userItems, systemItems] = await Promise.all([
+      buildItems(result?.user || []),
+      buildItems(result?.system || []),
+    ])
+
+    sortEnvItems(userItems)
+    sortEnvItems(systemItems)
+    userEnvList.value = userItems
+    systemEnvList.value = systemItems
+    envList.value = activeTab.value === 'systemVars' ? systemItems : userItems
+
+    const runtimeVar = userItems.find(e => e.name === 'ELSE_RUNTIME_PATH')
+    runtimePathValue.value = runtimeVar?.expandedValue || runtimeVar?.value || ''
   } catch (e: any) {
     ElMessage.error(e.message || '加载环境变量失败')
   }
@@ -389,7 +406,7 @@ async function loadEnvVars() {
 }
 
 async function checkElseRuntimePath() {
-  const has = envList.value.some(e => e.name === 'ELSE_RUNTIME_PATH')
+  const has = userEnvList.value.some(e => e.name === 'ELSE_RUNTIME_PATH')
   if (has) { showRuntimePathHint.value = false; return }
 
   try {
@@ -430,7 +447,7 @@ async function envConfirmEdit() {
   const name = envEditName.value.trim()
   const value = envEditValue.value
   if (!name) { ElMessage.warning('变量名不能为空'); return }
-  const isSystem = envTab.value === 'system'
+  const isSystem = activeTab.value === 'systemVars'
   try {
     await SetEnvVar(name, value, isSystem)
     ElMessage.success('已保存')
@@ -447,7 +464,7 @@ async function envDelete(item: EnvVarItem) {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
     })
     try {
-      await DeleteEnvVar(item.name, envTab.value === 'system')
+      await DeleteEnvVar(item.name, activeTab.value === 'systemVars')
       ElMessage.success('已删除')
       await loadEnvVars()
     } catch (e: any) {
@@ -468,7 +485,7 @@ async function envConfirmAdd() {
   const name = envAddName.value.trim()
   const value = envAddValue.value
   if (!name) { ElMessage.warning('请输入变量名'); return }
-  const isSystem = envTab.value === 'system'
+  const isSystem = activeTab.value === 'systemVars'
   try {
     await SetEnvVar(name, value, isSystem)
     envAddVisible.value = false
@@ -477,11 +494,6 @@ async function envConfirmAdd() {
   } catch (e: any) {
     ElMessage.error(e.message || '添加失败')
   }
-}
-
-function openPathDetail() {
-  pathDetailView.value = true
-  loadPathEntries()
 }
 
 // Helper functions
@@ -511,7 +523,7 @@ export function useEnvVars() {
     userPathStrings,
     pathSearch,
     pathLoading,
-    pathTab,
+    activeTab,
     pathDirty,
     pathEditIdx,
     pathEditVal,
@@ -556,9 +568,10 @@ export function useEnvVars() {
 
     // Environment Variables state
     envList,
+    userEnvList,
+    systemEnvList,
     envLoading,
     envSearch,
-    envTab,
     envEditingName,
     envEditName,
     envEditValue,
@@ -566,10 +579,11 @@ export function useEnvVars() {
     envAddVisible,
     envAddName,
     envAddValue,
-    pathDetailView,
     showRuntimePathHint,
     runtimePathValue,
-    filteredEnvList,
+    filteredUserEnvList,
+    filteredSystemEnvList,
+    activeEnvList,
     loadEnvVars,
     checkElseRuntimePath,
     createElseRuntimePath,
@@ -579,7 +593,6 @@ export function useEnvVars() {
     envDelete,
     envStartAdd,
     envConfirmAdd,
-    openPathDetail,
     copyPath,
     openPathDir,
   }

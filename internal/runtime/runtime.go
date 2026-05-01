@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ==================== Types ====================
@@ -31,17 +29,17 @@ var opMu sync.Mutex
 type SDKType string
 
 const (
-	SDKGo     SDKType = "go"
-	SDKNode   SDKType = "nodejs"
-	SDKJava   SDKType = "java"
+	SDKGo   SDKType = "go"
+	SDKNode SDKType = "nodejs"
+	SDKJava SDKType = "java"
 )
 
 type SDKInfo struct {
-	Type     SDKType `json:"type"`
-	Name     string  `json:"name"`
-	Icon     string  `json:"icon"`
+	Type      SDKType      `json:"type"`
+	Name      string       `json:"name"`
+	Icon      string       `json:"icon"`
 	Installed []SDKVersion `json:"installed"`
-	Current  string  `json:"current"`
+	Current   string       `json:"current"`
 }
 
 type SDKVersion struct {
@@ -51,7 +49,7 @@ type SDKVersion struct {
 }
 
 type ProgressEvent struct {
-	Phase   string `json:"phase"`   // download, extract, switch
+	Phase   string `json:"phase"` // download, extract, switch
 	Message string `json:"message"`
 	Percent int    `json:"percent"`
 }
@@ -228,6 +226,10 @@ func compareVersions(a, b string) int {
 func SwitchVersion(sdkType SDKType, version string) error {
 	opMu.Lock()
 	defer opMu.Unlock()
+	return switchVersionUnlocked(sdkType, version)
+}
+
+func switchVersionUnlocked(sdkType SDKType, version string) error {
 
 	if err := validateVersion(version); err != nil {
 		return err
@@ -276,9 +278,9 @@ func Uninstall(sdkType SDKType, version string) error {
 // ==================== Install ====================
 
 type InstallOptions struct {
-	SDKType  SDKType
-	Version  string
-	Ctx      context.Context // Wails context for emitting events
+	SDKType      SDKType
+	Version      string
+	EmitProgress func(ProgressEvent)
 }
 
 func Install(opts InstallOptions) error {
@@ -300,8 +302,8 @@ func Install(opts InstallOptions) error {
 	}
 
 	emit := func(phase, msg string, pct int) {
-		if opts.Ctx != nil {
-			wailsRuntime.EventsEmit(opts.Ctx, "sdk:progress", ProgressEvent{
+		if opts.EmitProgress != nil {
+			opts.EmitProgress(ProgressEvent{
 				Phase: phase, Message: msg, Percent: pct,
 			})
 		}
@@ -341,6 +343,7 @@ func Install(opts InstallOptions) error {
 
 	// Post-extract hook
 	if hook := provider.PostExtract; hook != nil {
+		emit("extract", "正在整理文件...", 99)
 		if err := hook(vDir, opts.Version); err != nil {
 			return err
 		}
@@ -349,7 +352,7 @@ func Install(opts InstallOptions) error {
 	// Auto-switch if no current version (non-fatal)
 	current := resolveCurrent(opts.SDKType)
 	if current == "" {
-		if err := SwitchVersion(opts.SDKType, opts.Version); err != nil {
+		if err := switchVersionUnlocked(opts.SDKType, opts.Version); err != nil {
 			emit("done", "安装完成（自动切换失败，请手动切换）", 100)
 		} else {
 			emit("done", fmt.Sprintf("已自动切换到 %s", opts.Version), 100)
@@ -410,7 +413,7 @@ func downloadFile(url, sdkType, version string, onProgress func(int)) (string, e
 	var total int64 = resp.ContentLength
 	var downloaded int64
 
-	buf := make([]byte, 32 * 1024)
+	buf := make([]byte, 32*1024)
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
@@ -594,6 +597,9 @@ func extractZip(path, dest string, onProgress func(int)) error {
 		if totalSize > 0 && onProgress != nil {
 			onProgress(int(processed * 100 / totalSize))
 		}
+	}
+	if onProgress != nil {
+		onProgress(100)
 	}
 	return nil
 }

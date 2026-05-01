@@ -684,7 +684,7 @@
 </template>
 
 <script lang="ts" setup>
-import { GetAppendPromptStoreDir } from '../../wailsjs/go/main/App'
+import { GetAppendPromptStoreDir } from '../../bindings/else-toolbox/app'
 import {
   // State
   ocConfig,

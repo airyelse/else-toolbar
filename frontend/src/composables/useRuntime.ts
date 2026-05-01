@@ -10,8 +10,8 @@ import {
   FetchAvailableVersions,
   SelectDirectory as SelectDirDialog,
   OpenInExplorer,
-} from '../../wailsjs/go/main/App'
-import { EventsOn } from '../../wailsjs/runtime/runtime'
+} from '../../bindings/else-toolbox/app'
+import { Events } from '@wailsio/runtime'
 
 // ==================== Types ====================
 export interface SDKVersionItem {
@@ -38,6 +38,8 @@ const installLoading = ref(false)
 const installProgress = ref<{ visible: boolean; phase: string; message: string; percent: number }>({
   visible: false, phase: '', message: '', percent: 0,
 })
+
+let installProgressCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 // Available versions
 const availableVersions = ref<string[]>([])
@@ -110,6 +112,10 @@ async function loadAvailableVersions(force = false) {
 async function handleInstall(version: string) {
   if (!version || !selectedSdk.value) return
   installLoading.value = true
+  if (installProgressCloseTimer) {
+    clearTimeout(installProgressCloseTimer)
+    installProgressCloseTimer = null
+  }
   installProgress.value = { visible: true, phase: 'download', message: '正在准备...', percent: 0 }
   try {
     await InstallSDK(selectedSdk.value, version)
@@ -120,8 +126,23 @@ async function handleInstall(version: string) {
     ElMessage.error(e?.message || e?.toString() || '安装失败')
   } finally {
     installLoading.value = false
-    setTimeout(() => { installProgress.value.visible = false }, 1500)
   }
+}
+
+function closeInstallProgress() {
+  if (installProgressCloseTimer) {
+    clearTimeout(installProgressCloseTimer)
+    installProgressCloseTimer = null
+  }
+  installProgress.value.visible = false
+}
+
+function scheduleInstallProgressClose(delay = 1500) {
+  if (installProgressCloseTimer) clearTimeout(installProgressCloseTimer)
+  installProgressCloseTimer = setTimeout(() => {
+    installProgress.value.visible = false
+    installProgressCloseTimer = null
+  }, delay)
 }
 
 async function handleUninstall(version: string) {
@@ -157,7 +178,7 @@ async function handleSwitch(version: string) {
 async function loadRuntimeConfig() {
   try {
     const cfg = await GetRuntimeConfig()
-    runtimeBaseDir.value = cfg.baseDir || ''
+    runtimeBaseDir.value = cfg?.baseDir || ''
   } catch { /* ignore */ }
 }
 
@@ -208,12 +229,20 @@ async function openPathDir(p: string) {
 let unlistenProgress: (() => void) | null = null
 
 function setupProgressListener() {
-  unlistenProgress = EventsOn('sdk:progress', (event: any) => {
-    installProgress.value = { visible: true, phase: event.phase, message: event.message, percent: event.percent }
+  unlistenProgress = Events.On('sdk:progress', (event: any) => {
+    const data = event.data
+    installProgress.value = { visible: true, phase: data.phase, message: data.message, percent: data.percent }
+    if (data.phase === 'done') {
+      scheduleInstallProgressClose()
+    }
   })
 }
 
 function cleanupProgressListener() {
+  if (installProgressCloseTimer) {
+    clearTimeout(installProgressCloseTimer)
+    installProgressCloseTimer = null
+  }
   if (typeof unlistenProgress === 'function') unlistenProgress()
 }
 
@@ -225,6 +254,7 @@ export {
   selectedSdk,
   installLoading,
   installProgress,
+  closeInstallProgress,
   availableVersions,
   availableLoading,
   availableError,

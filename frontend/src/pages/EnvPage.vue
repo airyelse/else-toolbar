@@ -6,9 +6,8 @@ const {
   systemPathEntries,
   userPathEntries,
   userPathStrings,
-  pathSearch,
   pathLoading,
-  pathTab,
+  activeTab,
   pathDirty,
   pathEditIdx,
   pathEditVal,
@@ -51,10 +50,10 @@ const {
   handleUpdateProfilePaths,
 
   // Environment Variables state
-  envList,
+  userEnvList,
+  systemEnvList,
   envLoading,
   envSearch,
-  envTab,
   envEditingName,
   envEditName,
   envEditValue,
@@ -62,10 +61,9 @@ const {
   envAddVisible,
   envAddName,
   envAddValue,
-  pathDetailView,
   showRuntimePathHint,
   runtimePathValue,
-  filteredEnvList,
+  activeEnvList,
   loadEnvVars,
   createElseRuntimePath,
   envStartEdit,
@@ -74,64 +72,68 @@ const {
   envDelete,
   envStartAdd,
   envConfirmAdd,
-  openPathDetail,
   copyPath,
   openPathDir,
 } = useEnvVars()
 
 onMounted(() => {
   loadEnvVars()
+  loadPathEntries()
 })
 </script>
 
 <template>
-  <div class="body" v-loading="envLoading">
+  <div class="body" v-loading="envLoading || pathLoading">
     <main class="main-content">
-      <!-- PATH detail view (existing PATH management) -->
-      <template v-if="pathDetailView">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
-          <el-button size="small" @click="loadEnvVars" class="path-action-btn">
-            <el-icon><ArrowLeft /></el-icon><span>返回环境变量</span>
+      <div class="env-page-header">
+        <div class="env-page-title">环境变量</div>
+        <div v-if="runtimePathValue" class="env-page-runtime-path" :title="runtimePathValue">
+          <span class="env-page-runtime-label">ELSE_RUNTIME_PATH</span>
+          <code class="env-page-runtime-code">{{ runtimePathValue }}</code>
+        </div>
+      </div>
+
+      <div class="path-tabs">
+        <div class="path-tab" :class="{ active: activeTab === 'userPath' }" @click="activeTab = 'userPath'">
+          用户 PATH
+          <span class="path-tab-count">{{ userPathEntries.length }}</span>
+        </div>
+        <div class="path-tab" :class="{ active: activeTab === 'userVars' }" @click="activeTab = 'userVars'">
+          用户变量
+          <span class="path-tab-count">{{ userEnvList.filter(item => !item.isPath).length }}</span>
+        </div>
+        <div class="path-tab" :class="{ active: activeTab === 'systemPath' }" @click="activeTab = 'systemPath'">
+          系统 PATH
+          <span class="path-tab-count">{{ systemPathEntries.length }}</span>
+        </div>
+        <div class="path-tab" :class="{ active: activeTab === 'systemVars' }" @click="activeTab = 'systemVars'">
+          系统变量
+          <span class="path-tab-count">{{ systemEnvList.filter(item => !item.isPath).length }}</span>
+        </div>
+        <div style="flex:1"></div>
+        <template v-if="activeTab === 'userPath'">
+          <el-button size="small" @click="handleOpenTerminal" class="path-action-btn">
+            <el-icon><Monitor /></el-icon><span>终端</span>
           </el-button>
-          <h2 style="font-size: 16px; font-weight: 600; color: var(--text); margin: 0">PATH 管理</h2>
-        </div>
+          <el-button size="small" @click="handleCleanInvalidPaths" class="path-action-btn" :disabled="invalidUserPathCount === 0">
+            <el-icon><Delete /></el-icon><span>清理无效{{ invalidUserPathCount > 0 ? ` (${invalidUserPathCount})` : '' }}</span>
+          </el-button>
+          <el-button size="small" @click="pathStartAdd" class="path-action-btn">
+            <el-icon><Plus /></el-icon><span>添加</span>
+          </el-button>
+          <el-button size="small" type="primary" @click="pathSave" :disabled="!pathDirty" class="path-action-btn">
+            <el-icon><Check /></el-icon><span>保存</span>
+          </el-button>
+        </template>
+        <template v-else>
+          <el-button size="small" @click="envStartAdd" class="path-action-btn">
+            <el-icon><Plus /></el-icon><span>添加</span>
+          </el-button>
+        </template>
+      </div>
 
-        <div class="path-tabs">
-          <div
-            class="path-tab"
-            :class="{ active: pathTab === 'user' }"
-            @click="pathTab = 'user'"
-          >
-            用户变量
-            <span class="path-tab-count">{{ userPathEntries.length }}</span>
-          </div>
-          <div
-            class="path-tab"
-            :class="{ active: pathTab === 'system' }"
-            @click="pathTab = 'system'"
-          >
-            系统变量
-            <span class="path-tab-count">{{ systemPathEntries.length }}</span>
-          </div>
-          <div style="flex:1"></div>
-          <template v-if="pathTab === 'user'">
-            <el-button size="small" @click="handleOpenTerminal" class="path-action-btn">
-              <el-icon><Monitor /></el-icon><span>终端</span>
-            </el-button>
-            <el-button size="small" @click="handleCleanInvalidPaths" class="path-action-btn" :disabled="invalidUserPathCount === 0">
-              <el-icon><Delete /></el-icon><span>清理无效{{ invalidUserPathCount > 0 ? ` (${invalidUserPathCount})` : '' }}</span>
-            </el-button>
-            <el-button size="small" @click="pathStartAdd" class="path-action-btn">
-              <el-icon><Plus /></el-icon><span>添加</span>
-            </el-button>
-            <el-button size="small" type="primary" @click="pathSave" :disabled="!pathDirty" class="path-action-btn">
-              <el-icon><Check /></el-icon><span>保存</span>
-            </el-button>
-          </template>
-        </div>
-
-        <!-- User PATH (editable) -->
-        <div class="path-list" v-if="pathTab === 'user'">
+      <template v-if="activeTab === 'userPath'">
+        <div class="path-list">
           <!-- Profile Bar -->
           <div class="profile-bar" v-if="pathProfiles.length > 0 || true">
             <div class="profile-bar-label">Profile</div>
@@ -217,9 +219,10 @@ onMounted(() => {
           </div>
           <div class="sidebar-empty" v-if="userPathEntries.length === 0">未检测到用户 PATH</div>
         </div>
+      </template>
 
-        <!-- System PATH (read-only) -->
-        <div class="path-list" v-if="pathTab === 'system'">
+      <template v-else-if="activeTab === 'systemPath'">
+        <div class="path-list">
           <div class="path-list-header">
             <div class="path-stats">
               <el-tag type="success" effect="plain" size="small">{{ pathListStats(systemPathEntries).valid }} 有效</el-tag>
@@ -256,10 +259,9 @@ onMounted(() => {
         </div>
       </template>
 
-      <!-- General env var list view -->
       <template v-else>
         <!-- ELSE_RUNTIME_PATH hint banner -->
-        <div class="env-hint-banner" v-if="showRuntimePathHint && envTab === 'user'">
+        <div class="env-hint-banner" v-if="showRuntimePathHint && activeTab === 'userVars'">
           <div class="env-hint-text">
             <el-icon size="16" style="color: var(--primary); flex-shrink: 0"><InfoFilled /></el-icon>
             <span>建议创建 <strong>ELSE_RUNTIME_PATH</strong> 用户变量，指向运行时基础目录，方便终端引用 SDK 路径。</span>
@@ -271,23 +273,8 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="env-tabs">
-          <div class="path-tab" :class="{ active: envTab === 'user' }" @click="envTab = 'user'; loadEnvVars()">
-            用户变量
-            <span class="path-tab-count">{{ envList.length }}</span>
-          </div>
-          <div class="path-tab" :class="{ active: envTab === 'system' }" @click="envTab = 'system'; loadEnvVars()">
-            系统变量
-            <span class="path-tab-count">{{ envList.length }}</span>
-          </div>
-          <div style="flex:1"></div>
-          <el-button size="small" @click="envStartAdd" class="path-action-btn">
-            <el-icon><Plus /></el-icon><span>添加</span>
-          </el-button>
-        </div>
-
         <div class="env-list">
-          <div v-for="item in filteredEnvList" :key="item.name" class="env-entry" :class="{ 'env-entry-path': item.isPath }">
+          <div v-for="item in activeEnvList" :key="item.name" class="env-entry" :class="{ 'env-entry-path': item.isPath }">
             <div class="env-entry-name">{{ item.name }}</div>
             <div class="env-entry-body" v-if="envEditingName !== item.name">
               <div class="env-entry-value" :title="item.expandedValue">{{ item.expandedValue || item.value }}</div>
@@ -299,11 +286,6 @@ onMounted(() => {
               </div>
             </div>
             <div class="env-entry-actions">
-              <template v-if="item.isPath">
-                <el-button text size="small" @click="openPathDetail" class="action-btn action-primary">
-                  <el-icon><Guide /></el-icon><span>管理</span>
-                </el-button>
-              </template>
               <template v-if="envEditingName === item.name">
                 <el-button text size="small" @click="envConfirmEdit" class="action-btn" type="primary">
                   <el-icon><Check /></el-icon>
@@ -322,7 +304,7 @@ onMounted(() => {
               </template>
             </div>
           </div>
-          <div class="sidebar-empty" v-if="!envLoading && filteredEnvList.length === 0">
+          <div class="sidebar-empty" v-if="!envLoading && activeEnvList.length === 0">
             {{ envSearch ? '未找到匹配变量' : '暂无环境变量' }}
           </div>
         </div>
@@ -462,6 +444,47 @@ onMounted(() => {
   flex: 1;
   padding: 20px 24px;
   overflow-y: auto;
+}
+
+.env-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.env-page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.env-page-runtime-path {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.env-page-runtime-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.env-page-runtime-code {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--primary);
 }
 
 /* ===== PATH Viewer ===== */

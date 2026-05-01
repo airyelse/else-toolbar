@@ -12,16 +12,17 @@ import (
 	"else-toolbox/internal/shell"
 	"else-toolbox/internal/vault"
 	"errors"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type App struct {
-	ctx     context.Context
-	dataDir string
+	app            *application.App
+	dataDir        string
+	processManager *process.Manager
 	*vault.Vault
 }
 
@@ -29,26 +30,43 @@ func NewApp() *App {
 	return &App{}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func (a *App) SetApp(app *application.App) {
+	a.app = app
+}
 
-	homeDir, _ := os.UserHomeDir()
+func (a *App) emitEvent(name string, data any) {
+	if a.app != nil {
+		a.app.Event.Emit(name, data)
+	}
+}
+
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("获取用户目录失败: %w", err)
+	}
+
 	a.dataDir = filepath.Join(homeDir, ".else-toolbox")
-	os.MkdirAll(a.dataDir, 0700)
+	if err := os.MkdirAll(a.dataDir, 0700); err != nil {
+		return fmt.Errorf("创建数据目录失败: %w", err)
+	}
 
 	if err := database.Init(a.dataDir); err != nil {
-		log.Fatalf("数据库初始化失败: %v", err)
+		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 	a.Vault = vault.New(a.dataDir)
 	opencode.InitModelCache(a.dataDir)
 	opencode.InitPresetStore(a.dataDir)
 	opencode.InitAppendPromptStore(a.dataDir)
 	opencode.InitMCPSkillCache(a.dataDir)
-	process.GetManager(ctx)
+
+	a.processManager = process.NewManager(ctx, a.emitEvent)
+	return nil
 }
 
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) ServiceShutdown() error {
 	database.Close()
+	return nil
 }
 
 // ==================== Runtime Manager ====================
@@ -59,9 +77,11 @@ func (a *App) ListSDKs() []runtime.SDKInfo {
 
 func (a *App) InstallSDK(sdkType string, version string) error {
 	opts := runtime.InstallOptions{
-		SDKType: runtime.SDKType(sdkType),
-		Version: version,
-		Ctx:     a.ctx,
+		SDKType:      runtime.SDKType(sdkType),
+		Version:      version,
+		EmitProgress: func(event runtime.ProgressEvent) {
+			a.emitEvent("sdk:progress", event)
+		},
 	}
 	return runtime.Install(opts)
 }
@@ -155,15 +175,11 @@ func (a *App) ApplyPathProfile(profileName string) error {
 		return errors.New("profile 为空")
 	}
 
-	// Read current user PATH from registry
 	currentPaths := pathenv.ReadUserPathRaw()
-
-	// Merge: profile paths first, then existing non-duplicate paths
 	merged := pathenv.MergeProfile(currentPaths, profilePaths)
 	return pathenv.SavePathEntries(merged)
 }
 
-// PreviewMergeProfile returns the would-be merged PATH list without saving.
 func (a *App) PreviewMergeProfile(profileName string) ([]string, error) {
 	profilePaths, err := pathenv.GetProfilePaths(a.dataDir, profileName)
 	if err != nil {
@@ -178,9 +194,14 @@ func (a *App) CleanInvalidUserPaths() ([]string, error) {
 }
 
 func (a *App) SelectDirectory() (string, error) {
-	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "选择目录",
-	})
+	if a.app == nil {
+		return "", errors.New("application 未初始化")
+	}
+	return a.app.Dialog.OpenFile().
+		SetTitle("选择目录").
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		PromptForSingleSelection()
 }
 
 // ==================== OpenCode Main Config ====================
@@ -293,7 +314,6 @@ func (a *App) GetOpenCodeSkills() ([]opencode.SkillInfo, error) {
 	return skills, err
 }
 
-// MCPSkillResult wraps both lists for Wails (can't return multiple values)
 type MCPSkillResult struct {
 	MCPs   []opencode.MCPInfo   `json:"mcps"`
 	Skills []opencode.SkillInfo `json:"skills"`
@@ -305,8 +325,6 @@ func (a *App) FetchMCPSkills() MCPSkillResult {
 }
 
 // ==================== Script Console ====================
-
-// --- Project CRUD ---
 
 func (a *App) ListProjects() []models.ProjectDTO {
 	var projects []models.Project
@@ -324,7 +342,6 @@ func (a *App) CreateProject(name string, notes string) (models.ProjectDTO, error
 	if name == "" {
 		return models.ProjectDTO{}, errors.New("项目名称不能为空")
 	}
-	// 自动计算 order
 	var maxOrder int
 	database.DB.Model(&models.Project{}).Select("COALESCE(MAX(`order`), -1)").Scan(&maxOrder)
 
@@ -347,19 +364,14 @@ func (a *App) UpdateProject(id uint, name string, notes string) error {
 }
 
 func (a *App) DeleteProject(id uint) error {
-	// 停止该项目下所有运行中的脚本
 	var scripts []models.Script
 	database.DB.Where("project_id = ?", id).Find(&scripts)
-	mgr := process.GetManager(a.ctx)
 	for _, s := range scripts {
-		mgr.Stop(s.ID)
+		a.processManager.Stop(s.ID)
 	}
-	// 将该项目的脚本设为无项目
 	database.DB.Model(&models.Script{}).Where("project_id = ?", id).Update("project_id", nil)
 	return database.DB.Delete(&models.Project{}, id).Error
 }
-
-// --- Script CRUD ---
 
 func (a *App) ListScripts() []models.ScriptDTO {
 	var scripts []models.Script
@@ -409,9 +421,7 @@ func (a *App) UpdateScript(id uint, name string, command string, workDir string,
 }
 
 func (a *App) DeleteScript(id uint) error {
-	// 先停止进程
-	mgr := process.GetManager(a.ctx)
-	mgr.Stop(id)
+	a.processManager.Stop(id)
 	return database.DB.Delete(&models.Script{}, id).Error
 }
 
@@ -420,13 +430,11 @@ func (a *App) StartScript(id uint) error {
 	if err := database.DB.First(&script, id).Error; err != nil {
 		return errors.New("脚本不存在")
 	}
-	mgr := process.GetManager(a.ctx)
-	return mgr.Start(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
+	return a.processManager.Start(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
 }
 
 func (a *App) StopScript(id uint) error {
-	mgr := process.GetManager(a.ctx)
-	return mgr.Stop(id)
+	return a.processManager.Stop(id)
 }
 
 func (a *App) RestartScript(id uint) error {
@@ -434,13 +442,11 @@ func (a *App) RestartScript(id uint) error {
 	if err := database.DB.First(&script, id).Error; err != nil {
 		return errors.New("脚本不存在")
 	}
-	mgr := process.GetManager(a.ctx)
-	return mgr.Restart(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
+	return a.processManager.Restart(id, script.Command, script.WorkDir, script.EnvVars, script.Elevated, script.KeepWindow)
 }
 
 func (a *App) GetScriptStatus(id uint) models.ScriptStatusDTO {
-	mgr := process.GetManager(a.ctx)
-	status, exitCode, pid := mgr.GetStatus(id)
+	status, exitCode, pid := a.processManager.GetStatus(id)
 	return models.ScriptStatusDTO{
 		ID:       id,
 		Status:   status,
@@ -450,8 +456,7 @@ func (a *App) GetScriptStatus(id uint) models.ScriptStatusDTO {
 }
 
 func (a *App) GetScriptLogs(id uint) []models.LogLineDTO {
-	mgr := process.GetManager(a.ctx)
-	entries := mgr.GetLogs(id)
+	entries := a.processManager.GetLogs(id)
 	result := make([]models.LogLineDTO, len(entries))
 	for i, e := range entries {
 		result[i] = models.LogLineDTO{
@@ -465,7 +470,6 @@ func (a *App) GetScriptLogs(id uint) []models.LogLineDTO {
 }
 
 func (a *App) ClearScriptLogs(id uint) error {
-	mgr := process.GetManager(a.ctx)
-	mgr.ClearLogs(id)
+	a.processManager.ClearLogs(id)
 	return nil
 }

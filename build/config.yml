@@ -1,0 +1,41 @@
+version: '3'
+
+info:
+  companyName: "airyelse"
+  productName: "else-toolbox"
+  productIdentifier: "com.airyelse.else-toolbox"
+  description: "A versatile developer toolbox"
+  copyright: "(c) 2025, airyelse"
+  comments: ""
+  version: "0.1.0"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: bun run dev
+      dir: frontend
+      type: background
+    - cmd: go build -o bin/else-toolbox.exe
+      type: blocking
+    - cmd: bin\else-toolbox.exe
+      type: primary
+
+fileAssociations:
+
+other:
+  - name: Application Data

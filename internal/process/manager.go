@@ -14,10 +14,11 @@ import (
 	"time"
 	"unsafe"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 	"runtime"
 )
+
+type EventEmitter func(name string, data any)
 
 // ManagedProcess 管理的进程
 type ManagedProcess struct {
@@ -46,28 +47,23 @@ type LogEntry struct {
 type Manager struct {
 	mu        sync.RWMutex
 	ctx       context.Context
+	emit      EventEmitter
 	processes map[uint]*ManagedProcess
 	statuses  map[uint]processStatus
 	logs      map[uint][]LogEntry // 每个 script 的日志缓冲
 	logMax    int                 // 每个 script 最大日志条数
 }
 
-var instance *Manager
-var once sync.Once
-
-// GetManager 获取单例管理器
-func GetManager(ctx context.Context) *Manager {
-	once.Do(func() {
-		instance = &Manager{
-			ctx:       ctx,
-			processes: make(map[uint]*ManagedProcess),
-			statuses:  make(map[uint]processStatus),
-			logs:      make(map[uint][]LogEntry),
-			logMax:    2000,
-		}
-	})
-	instance.ctx = ctx
-	return instance
+// NewManager 创建新的进程管理器
+func NewManager(ctx context.Context, emit EventEmitter) *Manager {
+	return &Manager{
+		ctx:       ctx,
+		emit:      emit,
+		processes: make(map[uint]*ManagedProcess),
+		statuses:  make(map[uint]processStatus),
+		logs:      make(map[uint][]LogEntry),
+		logMax:    2000,
+	}
 }
 
 // Start 启动脚本进程
@@ -103,9 +99,8 @@ func (m *Manager) Start(scriptID uint, command string, workDir string, envVarsJS
 	}
 
 	// 在 Windows 上使用 cmd /C 来执行命令
-	isWindows := true
 	var cmd *exec.Cmd
-	if isWindows {
+	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
 	} else {
 		// 解析命令
@@ -273,6 +268,7 @@ func (m *Manager) Stop(scriptID uint) error {
 		Timestamp: time.Now().Format("15:04:05"),
 	})
 
+	m.emitStatus(scriptID, "stopped", 0, 0)
 	return nil
 }
 
@@ -360,7 +356,6 @@ func (m *Manager) readStream(scriptID uint, reader io.Reader, source string) {
 // addLog 添加日志条目
 func (m *Manager) addLog(scriptID uint, entry LogEntry) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if m.logs[scriptID] == nil {
 		m.logs[scriptID] = make([]LogEntry, 0, 100)
@@ -372,10 +367,11 @@ func (m *Manager) addLog(scriptID uint, entry LogEntry) {
 	}
 
 	m.logs[scriptID] = append(m.logs[scriptID], entry)
+	m.mu.Unlock()
 
-	// 发送事件到前端
-	if m.ctx != nil {
-		wailsRuntime.EventsEmit(m.ctx, "script:log", map[string]interface{}{
+	// 锁外发送事件到前端
+	if m.emit != nil {
+		m.emit("script:log", map[string]any{
 			"id":        scriptID,
 			"text":      entry.Text,
 			"source":    entry.Source,
@@ -386,8 +382,8 @@ func (m *Manager) addLog(scriptID uint, entry LogEntry) {
 
 // emitStatus 发送状态变更事件
 func (m *Manager) emitStatus(scriptID uint, status string, exitCode int, pid int) {
-	if m.ctx != nil {
-		wailsRuntime.EventsEmit(m.ctx, "script:status", map[string]interface{}{
+	if m.emit != nil {
+		m.emit("script:status", map[string]any{
 			"id":       scriptID,
 			"status":   status,
 			"exitCode": exitCode,

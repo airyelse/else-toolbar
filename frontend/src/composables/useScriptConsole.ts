@@ -1,6 +1,6 @@
 import { ref, computed, nextTick, type CSSProperties } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { BrowserOpenURL, EventsOn } from '../../wailsjs/runtime/runtime'
+import { Browser, Events } from '@wailsio/runtime'
 import {
   ListProjects,
   CreateProject,
@@ -17,7 +17,7 @@ import {
   GetScriptLogs,
   ClearScriptLogs,
   SelectDirectory as SelectDirDialog,
-} from '../../wailsjs/go/main/App'
+} from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
 export interface ProjectItem {
@@ -339,7 +339,7 @@ function normalizeLogLine(line: RawLogLine): LogLine {
 }
 
 export function openLogUrl(url: string) {
-  BrowserOpenURL(url)
+  void Browser.OpenURL(url)
 }
 
 // ==================== State ====================
@@ -439,7 +439,7 @@ export async function handleDeleteProject(item: ProjectItem) {
 export async function loadScripts() {
   scriptLoading.value = true
   try {
-    scriptList.value = await ListScripts() || []
+    scriptList.value = ((await ListScripts()) || []).map((s: any) => ({ ...s, projectId: s.projectId ?? undefined })) as ScriptItem[]
     // 真正加载每个脚本的初始状态
     for (const s of scriptList.value) {
       try {
@@ -631,14 +631,15 @@ export async function handleScriptBrowseDir() {
 
 // ==================== Event Listeners ====================
 export function setupEventListeners() {
-  unlistenScriptLog = EventsOn('script:log', (event: any) => {
-    if (event.id === scriptLogId.value && scriptLogVisible.value) {
+  unlistenScriptLog = Events.On('script:log', (event: any) => {
+    const data = event.data
+    if (data.id === scriptLogId.value && scriptLogVisible.value) {
       const line = normalizeLogLine({
         id: 0,
-        scriptId: event.id,
-        text: event.text,
-        source: event.source,
-        timestamp: event.timestamp,
+        scriptId: data.id,
+        text: data.text,
+        source: data.source,
+        timestamp: data.timestamp,
       })
       if (line.text) {
         scriptLogs.value.push(line)
@@ -648,16 +649,17 @@ export function setupEventListeners() {
       }
     }
     // 同时更新状态为 running
-    if (scriptStatuses.value[event.id]) {
-      scriptStatuses.value[event.id].status = 'running'
+    if (scriptStatuses.value[data.id]) {
+      scriptStatuses.value[data.id].status = 'running'
     }
   })
 
-  unlistenScriptStatus = EventsOn('script:status', (event: any) => {
-    scriptStatuses.value[event.id] = {
-      status: event.status,
-      pid: event.pid || 0,
-      exitCode: event.exitCode || 0,
+  unlistenScriptStatus = Events.On('script:status', (event: any) => {
+    const data = event.data
+    scriptStatuses.value[data.id] = {
+      status: data.status,
+      pid: data.pid || 0,
+      exitCode: data.exitCode || 0,
     }
   })
 }

@@ -1,6 +1,7 @@
 import { ref, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ElTree } from 'element-plus'
+import { Browser } from '@wailsio/runtime'
 import {
   IsInitialized,
   SetupMasterKey,
@@ -25,8 +26,7 @@ import {
   UnlockWithHello,
   DisableHello,
   OpenWindowsHelloSettings,
-} from '../../wailsjs/go/main/App'
-import { EventsOn } from '../../wailsjs/runtime/runtime'
+} from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
 export interface Entry {
@@ -175,10 +175,10 @@ export function useVault() {
     loading.value = true
     try {
       const hasFilter = selectedCategoryId.value != null || selectedTagId.value != null
-      entries.value = await GetEntries(
+      entries.value = ((await GetEntries(
         selectedCategoryId.value ?? null,
         selectedTagId.value ?? null,
-      ) || []
+      )) || []).filter((e: any) => e != null) as Entry[]
       if (!hasFilter) {
         totalEntries.value = entries.value.length
       }
@@ -205,7 +205,7 @@ export function useVault() {
 
   async function loadTags() {
     try {
-      tags.value = await GetTags() || []
+      tags.value = ((await GetTags()) || []).filter((t: any) => t != null) as TagItem[]
     } catch { /* ignore */ }
   }
 
@@ -621,7 +621,7 @@ export function useVault() {
     try {
       const parsed = new URL(url)
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        window.open(url, '_blank', 'noopener,noreferrer')
+        Browser.OpenURL(url)
       }
     } catch { /* ignore invalid URL */ }
   }

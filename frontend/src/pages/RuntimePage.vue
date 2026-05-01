@@ -7,6 +7,7 @@ import {
   selectedSdk,
   installLoading,
   installProgress,
+  closeInstallProgress,
   availableVersions,
   availableLoading,
   availableError,
@@ -213,9 +214,9 @@ onUnmounted(() => {
   <!-- Install Progress -->
   <el-dialog
     v-model="installProgress.visible"
-    :show-close="false"
-    :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :show-close="installProgress.phase === 'done'"
+    :close-on-click-modal="installProgress.phase === 'done'"
+    :close-on-press-escape="installProgress.phase === 'done'"
     width="400px"
     align-center
     class="install-progress-dialog"
@@ -229,6 +230,9 @@ onUnmounted(() => {
         style="margin: 16px 0"
       />
       <div class="install-progress-msg">{{ installProgress.message }}</div>
+      <div v-if="installProgress.phase === 'done'" style="margin-top: 16px; text-align: right">
+        <el-button type="primary" @click="closeInstallProgress">关闭</el-button>
+      </div>
     </div>
   </el-dialog>
 </template>

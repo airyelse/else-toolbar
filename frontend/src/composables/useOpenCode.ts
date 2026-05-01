@@ -24,7 +24,7 @@ import {
   GetMainConfigPath,
   OpenOpenCodeConfigDir,
   OpenInExplorer,
-} from '../../wailsjs/go/main/App'
+} from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
 type AgentConfigItem = {
@@ -431,7 +431,8 @@ function ocDismissPresetDiff() {
 async function loadAppendPrompts() {
   ocAppendPromptsLoading.value = true
   try {
-    ocAppendPrompts.value = await ReadAllAppendPrompts() || {}
+    const prompts = await ReadAllAppendPrompts()
+    ocAppendPrompts.value = Object.fromEntries(Object.entries(prompts ?? {}).filter(([, v]) => v != null)) as Record<string, string>
     // 检测 .md 文件与持久存储的差异
     const diffs = await DiffAppendPrompts() || []
     ocPromptDiffs.value = diffs
