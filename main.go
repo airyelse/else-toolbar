@@ -38,8 +38,15 @@ func main() {
 	tray.SetLabel("else-toolbox")
 	tray.SetTooltip("Else Toolbox")
 
+	// Left click toggles window, right click shows menu
+	tray.OnClick(func() {
+		tray.ToggleWindow()
+	})
+
 	menu := app.NewMenu()
-	menu.Add("显示/隐藏窗口")
+	menu.Add("显示/隐藏窗口").OnClick(func(_ *application.Context) {
+		tray.ToggleWindow()
+	})
 	menu.AddSeparator()
 	menu.AddRole(application.Quit)
 	tray.SetIcon(appIcon).SetMenu(menu).Run()
@@ -52,8 +59,13 @@ func main() {
 		BackgroundColour: application.NewRGBA(27, 38, 54, 255),
 	})
 
+	tray.AttachWindow(window)
+
 	// Close button hides to tray instead of quitting
-	window.OnWindowEvent(events.Common.WindowClosing, func(e *application.WindowEvent) {
+	// Use RegisterHook (synchronous + cancellable) instead of OnWindowEvent (async)
+	// to prevent the framework from destroying the window
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
 		window.Hide()
 	})
 
