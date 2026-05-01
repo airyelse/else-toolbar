@@ -9,18 +9,22 @@ import (
 	"else-toolbox/internal/pathenv"
 	"else-toolbox/internal/process"
 	"else-toolbox/internal/runtime"
+	"else-toolbox/internal/settings"
 	"else-toolbox/internal/shell"
 	"else-toolbox/internal/vault"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type App struct {
 	app            *application.App
+	mainWindow     *application.WebviewWindow
+	allowCloseOnce atomic.Bool
 	dataDir        string
 	processManager *process.Manager
 	*vault.Vault
@@ -32,6 +36,46 @@ func NewApp() *App {
 
 func (a *App) SetApp(app *application.App) {
 	a.app = app
+}
+
+func (a *App) SetMainWindow(window *application.WebviewWindow) {
+	a.mainWindow = window
+}
+
+// ==================== Close Behavior ====================
+
+func (a *App) ShouldBypassCloseConfirm() bool {
+	return a.allowCloseOnce.Load()
+}
+
+func (a *App) GetCloseBehavior() string {
+	s, err := settings.Load()
+	if err != nil {
+		return ""
+	}
+	return s.CloseBehavior
+}
+
+func (a *App) SetCloseBehavior(behavior string) error {
+	s, err := settings.Load()
+	if err != nil {
+		return err
+	}
+	s.CloseBehavior = behavior
+	return settings.Save(s)
+}
+
+func (a *App) QuitApp() {
+	if a.app != nil {
+		a.allowCloseOnce.Store(true)
+		a.app.Quit()
+	}
+}
+
+func (a *App) HideWindow() {
+	if a.mainWindow != nil {
+		a.mainWindow.Hide()
+	}
 }
 
 func (a *App) emitEvent(name string, data any) {
@@ -77,8 +121,8 @@ func (a *App) ListSDKs() []runtime.SDKInfo {
 
 func (a *App) InstallSDK(sdkType string, version string) error {
 	opts := runtime.InstallOptions{
-		SDKType:      runtime.SDKType(sdkType),
-		Version:      version,
+		SDKType: runtime.SDKType(sdkType),
+		Version: version,
 		EmitProgress: func(event runtime.ProgressEvent) {
 			a.emitEvent("sdk:progress", event)
 		},

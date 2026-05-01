@@ -4,6 +4,8 @@ import (
 	"embed"
 	"log"
 
+	"else-toolbox/internal/settings"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -26,7 +28,7 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Windows: application.WindowsOptions{
-			AdditionalBrowserArgs:     []string{"--disable-gpu"},
+			AdditionalBrowserArgs:         []string{"--disable-gpu"},
 			DisableQuitOnLastWindowClosed: true,
 		},
 	})
@@ -60,13 +62,40 @@ func main() {
 	})
 
 	tray.AttachWindow(window)
+	svc.SetMainWindow(window)
 
-	// Close button hides to tray instead of quitting
+	// Close button behavior: backend is the single source of truth.
 	// Use RegisterHook (synchronous + cancellable) instead of OnWindowEvent (async)
-	// to prevent the framework from destroying the window
+	// to prevent the framework from destroying the window.
+	// If the saved close behavior is unknown OR settings fail to load,
+	// cancel and emit "window:close-requested" so the frontend can prompt.
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if svc.ShouldBypassCloseConfirm() {
+			return
+		}
+
+		s, err := settings.Load()
+		if err != nil {
+			// Settings load failed — ask the frontend instead of guessing
+			e.Cancel()
+			svc.emitEvent("window:close-requested", nil)
+			return
+		}
+
+		switch s.CloseBehavior {
+		case "quit":
+			e.Cancel()
+			svc.QuitApp()
+			return
+		case "minimize":
+			e.Cancel()
+			window.Hide()
+			return
+		}
+
+		// Unknown / empty — let the frontend decide
 		e.Cancel()
-		window.Hide()
+		svc.emitEvent("window:close-requested", nil)
 	})
 
 	if err := app.Run(); err != nil {
