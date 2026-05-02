@@ -560,13 +560,8 @@ onMounted(() => {
 }
 
 .path-entry:hover {
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary-border);
   box-shadow: var(--shadow-sm);
-}
-
-.path-entry.path-invalid {
-  background: #fef2f2;
-  border-color: #fecaca;
 }
 
 .path-entry-index {
@@ -724,7 +719,7 @@ onMounted(() => {
   gap: 12px;
   padding: 10px 14px;
   background: var(--primary-bg);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid var(--primary-border);
   border-radius: var(--radius-sm);
   margin-bottom: 12px;
 }
@@ -782,7 +777,7 @@ onMounted(() => {
 }
 
 .env-entry:hover {
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary-border);
   box-shadow: var(--shadow-sm);
 }
 
@@ -846,7 +841,7 @@ onMounted(() => {
 .action-btn:hover { background: var(--bg) !important; }
 .action-primary { color: var(--primary) !important; }
 .action-primary:hover { background: var(--primary-bg) !important; }
-.action-danger:hover { color: var(--danger) !important; background: #fef2f2 !important; }
+.action-danger:hover { color: var(--danger) !important; background: var(--danger-bg) !important; }
 
 .sidebar-empty {
   padding: 8px 16px;

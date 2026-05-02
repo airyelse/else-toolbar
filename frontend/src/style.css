@@ -1,23 +1,184 @@
+/*
+ * Design System: 三套主题 = 同一骨架 × 三种性格
+ *
+ * 骨架 (共用):
+ *   中性灰底色体系  bg / bg-card / border
+ *   三级文字        text / text-secondary / text-muted
+ *   EP 派生变量     从上述核心灰阶派生，不引入新灰阶
+ *
+ * 性格 (差异):
+ *   --primary / primary-light / primary-dark   品牌主色
+ *   --primary-bg                                选中态底色
+ *   --primary-border                            卡片 hover / 活跃边框
+ *   --bg-hover                                  交互悬停色
+ *
+ *   Light  → Studio Indigo    干净白底 + 经典靛蓝 + 灰色 hover
+ *   Dark   → Midnight Violet  暗灰底 + 暖紫品牌色 + 紫晕 hover
+ *   AMOLED → Neon Indigo      纯黑底 + 靛蓝辉光 + 蓝辉 hover
+ */
+
 :root {
+  /* === Brand: Studio Indigo === */
   --primary: #6366f1;
   --primary-light: #818cf8;
   --primary-dark: #4f46e5;
   --primary-bg: #eef2ff;
+  --primary-border: rgba(99, 102, 241, 0.2);
+
+  /* === Semantic === */
   --success: #10b981;
+  --success-bg: #f0fdf4;
+  --success-border: rgba(16, 185, 129, 0.3);
   --warning: #f59e0b;
   --danger: #ef4444;
-  --bg: #f8fafc;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+
+  /* === Surface === */
+  --bg: #f5f5f5;
   --bg-card: #ffffff;
-  --border: #e2e8f0;
-  --text: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --bg-surface: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --border: #e5e5e5;
+  --header-bg: rgba(255, 255, 255, 0.85);
+  --badge-dot-inner: #fff;
+
+  /* === Text === */
+  --text: #18181b;
+  --text-secondary: #71717a;
+  --text-muted: #a1a1aa;
+
+  /* === Effect === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
   --radius: 12px;
   --radius-sm: 8px;
+}
+
+/* ===================================================================
+ * Dark: Warm Indigo
+ * 中性灰底 + 暖靛蓝品牌色（色相 ~244°，介于 Indigo 与 Violet 之间）
+ * 交互元素带一丝暖意，不张扬
+ * =================================================================== */
+html.dark {
+  /* Brand: Warm Indigo — 比 Light 稍暖，比 Violet 克制 */
+  --primary: #938df5;
+  --primary-light: #b5b0fc;
+  --primary-dark: #756fe0;
+  --primary-bg: rgba(147, 141, 245, 0.12);
+  --primary-border: rgba(147, 141, 245, 0.25);
+
+  /* Semantic — 保持功能色不变 */
+  --success: #34d399;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --success-border: rgba(16, 185, 129, 0.3);
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --danger-border: rgba(239, 68, 68, 0.25);
+
+  /* Surface — 中性灰骨架 */
+  --bg: #141414;
+  --bg-card: #1e1e1e;
+  --bg-surface: #1a1a1a;
+  --bg-hover: rgba(147, 141, 245, 0.05);
+  --border: #2e2e2e;
+  --header-bg: rgba(20, 20, 20, 0.88);
+  --badge-dot-inner: #1e1e1e;
+
+  /* Text */
+  --text: #ebebeb;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+
+  /* Effect */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+
+  /* Element Plus */
+  --el-bg-color: #1e1e1e;
+  --el-bg-color-overlay: #1e1e1e;
+  --el-bg-color-page: #141414;
+  --el-text-color-primary: #ebebeb;
+  --el-text-color-regular: #d4d4d4;
+  --el-text-color-secondary: #a0a0a0;
+  --el-text-color-placeholder: #666666;
+  --el-border-color: #2e2e2e;
+  --el-border-color-light: #282828;
+  --el-border-color-lighter: #232323;
+  --el-fill-color: #282828;
+  --el-fill-color-light: #1e1e1e;
+  --el-fill-color-lighter: #1a1a1a;
+  --el-fill-color-blank: #1e1e1e;
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+  --el-dialog-bg-color: #1e1e1e;
+  --el-card-bg-color: #1e1e1e;
+}
+
+/* ===================================================================
+ * AMOLED: Neon Indigo
+ * 纯黑底 + 靛蓝辉光 + 蓝-tinted hover
+ * 所有交互带"屏幕发光"质感，科技/终端气质
+ * =================================================================== */
+html.amoled {
+  /* Brand: Graphite Gray — 纯黑底上的克制灰色高亮 */
+  --primary: #a3a3a3;
+  --primary-light: #d4d4d4;
+  --primary-dark: #737373;
+  --primary-bg: rgba(163, 163, 163, 0.14);
+  --primary-border: rgba(163, 163, 163, 0.28);
+
+  /* Semantic */
+  --success: #34d399;
+  --success-bg: rgba(16, 185, 129, 0.08);
+  --success-border: rgba(16, 185, 129, 0.25);
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --danger-bg: rgba(239, 68, 68, 0.08);
+  --danger-border: rgba(239, 68, 68, 0.20);
+
+  /* Surface — 纯黑骨架 */
+  --bg: #000000;
+  --bg-card: #0c0c0c;
+  --bg-surface: #000000;
+  --bg-hover: rgba(163, 163, 163, 0.08);
+  --border: #1e1e1e;
+  --header-bg: #000000;
+  --badge-dot-inner: #000000;
+
+  /* Text */
+  --text: #ebebeb;
+  --text-secondary: #a0a0a0;
+  --text-muted: #737373;
+
+  /* Effect — 无阴影，纯靠边框和辉光 */
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+
+  /* Element Plus */
+  --el-bg-color: #0c0c0c;
+  --el-bg-color-overlay: #101010;
+  --el-bg-color-page: #000000;
+  --el-text-color-primary: #ebebeb;
+  --el-text-color-regular: #d4d4d4;
+  --el-text-color-secondary: #a0a0a0;
+  --el-text-color-placeholder: #666666;
+  --el-border-color: #1e1e1e;
+  --el-border-color-light: #171717;
+  --el-border-color-lighter: #121212;
+  --el-fill-color: #161616;
+  --el-fill-color-light: #101010;
+  --el-fill-color-lighter: #0a0a0a;
+  --el-fill-color-blank: #0c0c0c;
+  --el-mask-color: rgba(0, 0, 0, 0.75);
+  --el-dialog-bg-color: #101010;
+  --el-card-bg-color: #0c0c0c;
 }
 
 * {
@@ -33,7 +194,7 @@ html, body, #app {
   background: var(--bg);
 }
 
-/* Element Plus 覆盖 */
+/* Element Plus 全局覆盖 */
 .el-button--primary {
   --el-button-bg-color: var(--primary) !important;
   --el-button-border-color: var(--primary) !important;
@@ -72,7 +233,7 @@ html, body, #app {
   border-radius: 6px !important;
 }
 
-/* 自定义滚动条 */
+/* 滚动条 */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -88,4 +249,21 @@ html, body, #app {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* ===== AMOLED: ConsolePage 日志查看器 ===== */
+html.amoled .script-log-viewer {
+  background: #000 !important;
+}
+
+html.amoled .script-log-viewer::-webkit-scrollbar-track {
+  background: #050505 !important;
+}
+
+html.amoled .script-log-viewer::-webkit-scrollbar-thumb {
+  background: #1e1e1e !important;
+}
+
+html.amoled .script-log-viewer::-webkit-scrollbar-thumb:hover {
+  background: #2e2e2e !important;
 }

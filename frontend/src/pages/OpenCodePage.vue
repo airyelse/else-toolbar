@@ -872,7 +872,7 @@ loadOpenCodeConfig()
 
 .oc-preset-item.active {
   background: var(--primary-bg);
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary-border);
 }
 
 .oc-preset-radio {
@@ -892,7 +892,7 @@ loadOpenCodeConfig()
 .oc-preset-dot.active {
   border-color: var(--primary);
   background: var(--primary);
-  box-shadow: inset 0 0 0 3px #fff;
+  box-shadow: inset 0 0 0 3px var(--badge-dot-inner);
 }
 
 .oc-preset-name {
@@ -956,7 +956,7 @@ loadOpenCodeConfig()
 
 .oc-agent-card:hover {
   box-shadow: var(--shadow-md);
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary-border);
   transform: translateY(-1px);
 }
 
@@ -1120,7 +1120,7 @@ loadOpenCodeConfig()
 /* Overview chips */
 .oc-ov-chips { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .oc-ov-chip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); transition: all 0.15s; }
-.oc-ov-chip:hover { border-color: rgba(99, 102, 241, 0.3); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); }
+.oc-ov-chip:hover { border-color: var(--primary-border); box-shadow: var(--shadow-sm); }
 .oc-ov-chip-val { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1; }
 .oc-ov-chip-val--primary { color: var(--primary); }
 .oc-ov-chip-val--warning { color: var(--warning); }

@@ -6,6 +6,21 @@
     <title>else-toolbox</title>
 </head>
 <body>
+<script>
+  // 防止首屏闪烁：在 DOM 渲染前确定主题
+  (function () {
+    try {
+      var m = localStorage.getItem('else-toolbox-theme');
+      if (m === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (m === 'amoled') {
+        document.documentElement.classList.add('amoled');
+      } else if (m !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.classList.add('dark');
+      }
+    } catch (e) {}
+  })();
+</script>
 <div id="app"></div>
 <script src="./src/main.ts" type="module"></script>
 </body>

@@ -14,6 +14,7 @@ import {
   handleRefreshModels,
   saveOpenCodeConfig,
 } from './composables/useOpenCode'
+import { useTheme } from './composables/useTheme'
 import {
   Box,
   Check,
@@ -24,6 +25,9 @@ import {
 } from '@element-plus/icons-vue'
 import { Events } from '@wailsio/runtime'
 import { GetCloseBehavior, SetCloseBehavior, QuitApp, HideWindow } from '../bindings/else-toolbox/app'
+
+// ==================== Theme ====================
+const { mode, modeLabel, cycleMode } = useTheme()
 
 // ==================== Navigation ====================
 type Tool = 'vault' | 'env' | 'runtime' | 'opencode' | 'console'
@@ -104,6 +108,13 @@ async function handleCloseAction(behavior: 'quit' | 'minimize') {
           </div>
         </el-tooltip>
       </div>
+      <div class="nav-rail-bottom">
+        <el-tooltip :content="'主题: ' + modeLabel" placement="right">
+          <div class="nav-rail-item theme-toggle" @click="cycleMode">
+            <el-icon size="18"><Monitor v-if="mode === 'system'" /><Sunny v-else-if="mode === 'light'" /><Moon v-else-if="mode === 'dark'" /><Cellphone v-else /></el-icon>
+          </div>
+        </el-tooltip>
+      </div>
     </nav>
 
     <!-- Right area: Header + Body -->
@@ -175,7 +186,7 @@ async function handleCloseAction(behavior: 'quit' | 'minimize') {
 .nav-rail {
   width: 56px;
   flex-shrink: 0;
-  background: var(--bg-card);
+  background: var(--bg-surface);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -196,13 +207,30 @@ async function handleCloseAction(behavior: 'quit' | 'minimize') {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--badge-dot-inner);
 }
 
 .nav-rail-items {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+}
+
+.nav-rail-bottom {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
+.theme-toggle {
+  opacity: 0.7;
+}
+
+.theme-toggle:hover {
+  opacity: 1;
 }
 
 .nav-rail-item {
@@ -219,7 +247,7 @@ async function handleCloseAction(behavior: 'quit' | 'minimize') {
 }
 
 .nav-rail-item:hover {
-  background: var(--bg);
+  background: var(--bg-hover);
   color: var(--text);
 }
 
@@ -255,7 +283,7 @@ async function handleCloseAction(behavior: 'quit' | 'minimize') {
   align-items: center;
   padding: 0 24px;
   height: 56px;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--header-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;

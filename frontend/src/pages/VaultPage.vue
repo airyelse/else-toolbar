@@ -679,8 +679,7 @@ onUnmounted(() => {
 
 .entry-card:hover {
   box-shadow: var(--shadow-md);
-  border-color: rgba(99, 102, 241, 0.2);
-  transform: translateY(-1px);
+  border-color: var(--primary-border);
 }
 
 .card-header {
@@ -696,7 +695,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--badge-dot-inner);
   font-weight: 700;
   font-size: 15px;
   flex-shrink: 0;
@@ -787,7 +786,7 @@ onUnmounted(() => {
 .action-btn:hover { background: var(--bg) !important; }
 .action-primary { color: var(--primary) !important; }
 .action-primary:hover { background: var(--primary-bg) !important; }
-.action-danger:hover { color: var(--danger) !important; background: #fef2f2 !important; }
+.action-danger:hover { color: var(--danger) !important; background: var(--danger-bg) !important; }
 .action-spacer { flex: 1; }
 
 /* ===== Empty State ===== */
@@ -843,7 +842,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--badge-dot-inner);
   margin: 0 auto 24px;
   box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
 }

@@ -356,7 +356,7 @@ onUnmounted(() => {
 }
 
 .sdk-card:hover {
-  border-color: rgba(99, 102, 241, 0.3);
+  border-color: var(--primary-border);
   box-shadow: var(--shadow-sm);
 }
 
@@ -419,13 +419,13 @@ onUnmounted(() => {
 }
 
 .sdk-version-item:hover {
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary-border);
   box-shadow: var(--shadow-sm);
 }
 
 .sdk-version-item.active {
-  border-color: rgba(16, 185, 129, 0.4);
-  background: #f0fdf4;
+  border-color: var(--success-border);
+  background: var(--success-bg);
 }
 
 .sdk-version-installed {
@@ -507,5 +507,5 @@ onUnmounted(() => {
 .action-btn:hover { background: var(--bg) !important; }
 .action-primary { color: var(--primary) !important; }
 .action-primary:hover { background: var(--primary-bg) !important; }
-.action-danger:hover { color: var(--danger) !important; background: #fef2f2 !important; }
+.action-danger:hover { color: var(--danger) !important; background: var(--danger-bg) !important; }
 </style>
