@@ -90,7 +90,7 @@ cd frontend && npm install element-plus @element-plus/icons-vue
 wails dev
 
 # 构建
-wails build
+task build
 ```
 
 ## 安全设计
