@@ -12,6 +12,7 @@ frontend/package.json.md5
 # Dependencies
 node_modules
 frontend/dist
+frontend/wailsio-runtime-*.tgz
 
 # Wails auto-generated bindings
 frontend/wailsjs/
