@@ -34,7 +34,7 @@ tasks:
           BUILD_FLAGS:
             ref: .BUILD_FLAGS
     cmds:
-      - bun run build -q
+      - bun run build
     env:
       PRODUCTION: '{{.PRODUCTION | default "false"}}'
 

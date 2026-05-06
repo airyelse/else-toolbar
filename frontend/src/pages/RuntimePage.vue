@@ -1,6 +1,18 @@
 <script lang="ts" setup>
 import { onMounted, onUnmounted } from 'vue'
 import {
+  Setting,
+  Refresh,
+  Check,
+  SwitchButton,
+  Delete,
+  Box,
+  Loading,
+  WarningFilled,
+  Download,
+  FolderOpened,
+} from '@element-plus/icons-vue'
+import {
   // State
   sdkList,
   sdkLoading,

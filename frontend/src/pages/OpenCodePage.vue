@@ -686,6 +686,23 @@
 <script lang="ts" setup>
 import { GetAppendPromptStoreDir } from '../../bindings/else-toolbox/app'
 import {
+  Setting,
+  Operation,
+  FolderOpened,
+  Connection,
+  RefreshRight,
+  Monitor,
+  Link,
+  MagicStick,
+  Check,
+  Document,
+  Plus,
+  Edit,
+  Delete,
+  CircleCheck,
+  ArrowRight,
+} from '@element-plus/icons-vue'
+import {
   // State
   ocConfig,
   ocConfigPath,

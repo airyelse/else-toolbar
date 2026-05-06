@@ -1,6 +1,22 @@
 <script lang="ts" setup>
 import { onMounted, onUnmounted } from 'vue'
 import {
+  Grid,
+  Plus,
+  Folder,
+  Edit,
+  Delete,
+  InfoFilled,
+  Cpu,
+  VideoPlay,
+  VideoPause,
+  RefreshRight,
+  Document,
+  Monitor,
+  FolderOpened,
+  Bottom,
+} from '@element-plus/icons-vue'
+import {
   projectList,
   selectedProjectId,
   projectFormVisible,

@@ -1,5 +1,22 @@
 <script lang="ts" setup>
 import { onMounted } from 'vue'
+import {
+  Monitor,
+  Delete,
+  Plus,
+  Check,
+  Connection,
+  FolderAdd,
+  Setting,
+  Close,
+  Top,
+  Bottom,
+  Edit,
+  CopyDocument,
+  FolderOpened,
+  InfoFilled,
+  Refresh,
+} from '@element-plus/icons-vue'
 import { useEnvVars } from '../composables/useEnvVars'
 const {
   // PATH state

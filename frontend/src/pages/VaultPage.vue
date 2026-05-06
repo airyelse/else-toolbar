@@ -318,7 +318,8 @@ onUnmounted(() => {
         <el-tree-select
           v-model="categoryForm.parentId"
           :data="categoryTree"
-          :props="{ label: 'label', children: 'children', value: 'id' }"
+          :props="{ label: 'label', children: 'children' }"
+          node-key="id"
           placeholder="无（顶级分类）"
           clearable
           check-strictly
@@ -382,7 +383,8 @@ onUnmounted(() => {
         <el-tree-select
           v-model="editForm.categoryId"
           :data="categoryTree"
-          :props="{ label: 'label', children: 'children', value: 'id' }"
+          :props="{ label: 'label', children: 'children' }"
+          node-key="id"
           placeholder="选择分类"
           clearable
           check-strictly
@@ -413,7 +415,7 @@ onUnmounted(() => {
         </el-select>
       </el-form-item>
       <el-form-item label="备注">
-        <el-input v-model="editForm.notes" type="textarea" rows="2" size="large" placeholder="可选备注信息" />
+        <el-input v-model="editForm.notes" type="textarea" :rows="2" size="large" placeholder="可选备注信息" />
       </el-form-item>
     </el-form>
     <template #footer>

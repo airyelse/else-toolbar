@@ -644,7 +644,7 @@ type SkillInfo struct {
 
 // ReadMCPConfig reads MCP servers from the resolved opencode config (includes plugin MCPs)
 func ReadMCPConfig() ([]MCPInfo, error) {
-	out, err := exec.Command("opencode", "debug", "config").Output()
+	out, err := newOpenCodeCommand("debug", "config").Output()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode debug config 失败: %w", err)
 	}
@@ -702,7 +702,7 @@ func ReadMCPConfig() ([]MCPInfo, error) {
 
 // ReadSkills reads all skills from the resolved opencode debug skill output
 func ReadSkills() ([]SkillInfo, error) {
-	out, err := exec.Command("opencode", "debug", "skill").Output()
+	out, err := newOpenCodeCommand("debug", "skill").Output()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode debug skill 失败: %w", err)
 	}
@@ -957,7 +957,7 @@ func ForceRefreshModels() ([]string, error) {
 }
 
 func refreshModels() ([]string, error) {
-	out, err := exec.Command("opencode", "models", "--refresh").CombinedOutput()
+	out, err := newOpenCodeCommand("models", "--refresh").CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("执行 opencode models 失败: %w", err)
 	}
@@ -983,4 +983,10 @@ func refreshModels() ([]string, error) {
 	go saveModelCacheFile(models) // 异步写文件，不阻塞
 
 	return models, nil
+}
+
+func newOpenCodeCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("opencode", args...)
+	configureOpenCodeCommand(cmd)
+	return cmd
 }
