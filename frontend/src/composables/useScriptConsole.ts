@@ -1,6 +1,6 @@
 import { ref, computed, nextTick, type CSSProperties } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Browser, Events } from '@wailsio/runtime'
+import { Browser, Events, Call } from '@wailsio/runtime'
 import {
   ListProjects,
   CreateProject,
@@ -18,6 +18,9 @@ import {
   ClearScriptLogs,
   SelectDirectory as SelectDirDialog,
   SelectScriptFile,
+  StartProjectScripts,
+  StopProjectScripts,
+  RestartProjectScripts,
 } from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
@@ -366,7 +369,7 @@ export const scriptLogs = ref<LogLine[]>([])
 export const scriptLogLoading = ref(false)
 export const scriptLogAutoScroll = ref(true)
 export const scriptLogRef = ref<HTMLDivElement>()
-export const scriptStatuses = ref<Record<number, { status: string; pid: number; exitCode: number }>>({})
+export const scriptStatuses = ref<Record<number, { status: string; pid: number; childPid: number; exitCode: number; ports: string[] }>>({})
 
 // Event listener cleanup functions
 let unlistenScriptLog: (() => void) | null = null
@@ -448,7 +451,9 @@ export async function loadScripts() {
         scriptStatuses.value[s.id] = {
           status: status.status,
           pid: status.pid,
+          childPid: status.childPid || 0,
           exitCode: status.exitCode,
+          ports: status.ports || [],
         }
       } catch { /* ignore */ }
     }
@@ -543,7 +548,7 @@ export async function handleDeleteScript(item: ScriptItem) {
 export async function handleStartScript(id: number) {
   try {
     await StartScript(id)
-    scriptStatuses.value[id] = { status: 'running', pid: 0, exitCode: 0 }
+    scriptStatuses.value[id] = { status: 'running', pid: 0, childPid: 0, exitCode: 0, ports: [] }
   } catch (e: any) {
     ElMessage.error(e.message || '启动失败')
   }
@@ -552,7 +557,7 @@ export async function handleStartScript(id: number) {
 export async function handleStopScript(id: number) {
   try {
     await StopScript(id)
-    scriptStatuses.value[id] = { status: 'stopped', pid: 0, exitCode: 0 }
+    scriptStatuses.value[id] = { status: 'stopped', pid: 0, childPid: 0, exitCode: 0, ports: [] }
   } catch (e: any) {
     ElMessage.error(e.message || '停止失败')
   }
@@ -561,9 +566,80 @@ export async function handleStopScript(id: number) {
 export async function handleRestartScript(id: number) {
   try {
     await RestartScript(id)
-    scriptStatuses.value[id] = { status: 'running', pid: 0, exitCode: 0 }
+    scriptStatuses.value[id] = { status: 'running', pid: 0, childPid: 0, exitCode: 0, ports: [] }
   } catch (e: any) {
     ElMessage.error(e.message || '重启失败')
+  }
+}
+
+export async function handleStartProjectScripts(projectId: number) {
+  try {
+    const result = await StartProjectScripts(projectId)
+    for (const id of (result?.startedIds || [])) {
+      scriptStatuses.value[id] = { status: 'running', pid: 0, childPid: 0, exitCode: 0, ports: [] }
+    }
+    const startedCount = result?.startedIds?.length || 0
+    const failedList = result?.failed || []
+    if (failedList.length === 0) {
+      ElMessage.success(`已启动全部 ${startedCount} 个脚本`)
+    } else {
+      const failedNames = failedList.map((f: any) => f.name).join('、')
+      ElMessage.warning(`已启动 ${startedCount} 个脚本，${failedList.length} 个失败：${failedNames}`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '一键启动失败')
+  }
+}
+
+export async function handleStopProjectScripts(projectId: number) {
+  try {
+    const result = await StopProjectScripts(projectId)
+    for (const id of (result?.stoppedIds || [])) {
+      scriptStatuses.value[id] = { status: 'stopped', pid: 0, childPid: 0, exitCode: 0, ports: [] }
+    }
+    const stoppedCount = result?.stoppedIds?.length || 0
+    const failedList = result?.failed || []
+    if (failedList.length === 0) {
+      ElMessage.success(`已停止全部 ${stoppedCount} 个脚本`)
+    } else {
+      const failedNames = failedList.map((f: any) => f.name).join('、')
+      ElMessage.warning(`已停止 ${stoppedCount} 个脚本，${failedList.length} 个失败：${failedNames}`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '一键关闭失败')
+  }
+}
+
+export async function handleRestartProjectScripts(projectId: number) {
+  try {
+    const result = await RestartProjectScripts(projectId)
+    for (const id of (result?.startedIds || [])) {
+      scriptStatuses.value[id] = { status: 'running', pid: 0, childPid: 0, exitCode: 0, ports: [] }
+    }
+    const restartedCount = result?.startedIds?.length || 0
+    const failedList = result?.failed || []
+    if (failedList.length === 0) {
+      ElMessage.success(`已重启全部 ${restartedCount} 个脚本`)
+    } else {
+      const failedNames = failedList.map((f: any) => f.name).join('、')
+      ElMessage.warning(`已重启 ${restartedCount} 个脚本，${failedList.length} 个失败：${failedNames}`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '一键重启失败')
+  }
+}
+
+/** 判断项目下是否存在运行中的脚本 */
+export function isProjectRunning(projectId: number): boolean {
+  return scriptList.value.some(s => s.projectId === projectId && scriptStatuses.value[s.id]?.status === 'running')
+}
+
+/** 项目级启停切换：有运行中脚本则停止，否则启动 */
+export function handleToggleProjectScripts(projectId: number) {
+  if (isProjectRunning(projectId)) {
+    handleStopProjectScripts(projectId)
+  } else {
+    handleStartProjectScripts(projectId)
   }
 }
 
@@ -656,6 +732,23 @@ export async function handleScriptBrowseFile() {
   } catch { /* ignore */ }
 }
 
+// ==================== Port Detection ====================
+export async function handleRefreshPorts(id: number) {
+  try {
+    const ports = await Call.ByName('else-toolbox/App.RefreshScriptPorts', id)
+    if (scriptStatuses.value[id]) {
+      scriptStatuses.value[id] = {
+        ...scriptStatuses.value[id],
+        ports: ports || [],
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+export function openPortUrl(port: string) {
+  void Browser.OpenURL(`http://localhost:${port}`)
+}
+
 // ==================== Event Listeners ====================
 export function setupEventListeners() {
   unlistenScriptLog = Events.On('script:log', (event: any) => {
@@ -686,7 +779,9 @@ export function setupEventListeners() {
     scriptStatuses.value[data.id] = {
       status: data.status,
       pid: data.pid || 0,
+      childPid: data.childPid || 0,
       exitCode: data.exitCode || 0,
+      ports: data.status === 'running' ? (scriptStatuses.value[data.id]?.ports || []) : [],
     }
   })
 }

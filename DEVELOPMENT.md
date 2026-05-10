@@ -1,21 +1,21 @@
-# Else Toolbox - 开发文档
+# Else Toolbar - 开发文档
 
-基于 Wails + Vue3 的本地密码管理工具箱。
+基于 Wails v3 + Vue 3 的本地工具箱应用。
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 框架 | Wails v2 |
+| 框架 | Wails v3 |
 | 前端 | Vue 3 + Element Plus + TypeScript |
-| 后端 | Go 1.21+ |
+| 后端 | Go 1.25+ |
 | 数据库 | SQLite + GORM (pure-go, no CGO) |
 | 加密 | AES-256-GCM |
 
 ## 项目结构
 
 ```
-else-toolbox/
+else-toolbar/
 ├── app.go                 # Wails 应用入口
 ├── internal/
 │   ├── crypto/           # AES 加密模块
@@ -26,7 +26,7 @@ else-toolbox/
 │   │   ├── views/        # 页面组件
 │   │   ├── components/   # 通用组件
 │   │   └── api/          # Go 绑定调用
-│   └── wailsjs/          # Wails 自动生成
+│   └── bindings/         # Wails v3 自动生成的绑定
 ├── wails.json
 └── build/                # 打包资源
 ```
@@ -71,8 +71,8 @@ type PasswordEntry struct {
 ### 4. 前端 API 调用
 
 ```typescript
-// Wails 绑定调用
-import { CreateEntry, GetEntries, DecryptPassword } from '../wailsjs/go/main/App'
+// Wails v3 绑定调用
+import { CreateEntry, GetEntries, DecryptPassword } from '../bindings/else-toolbox/app'
 
 // 使用示例
 const entries = await GetEntries()
@@ -82,12 +82,13 @@ await CreateEntry({ title, username, password, url })
 ## 快速开始
 
 ```bash
-# 安装依赖
-go get gorm.io/gorm gorm.io/driver/sqlite
-cd frontend && npm install element-plus @element-plus/icons-vue
+# 安装前端依赖
+cd frontend && bun install
 
 # 开发模式
-wails dev
+task dev
+# 或
+wails3 dev
 
 # 构建
 task build

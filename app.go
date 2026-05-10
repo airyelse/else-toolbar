@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -501,13 +502,23 @@ func (a *App) RestartScript(id uint) error {
 }
 
 func (a *App) GetScriptStatus(id uint) models.ScriptStatusDTO {
-	status, exitCode, pid := a.processManager.GetStatus(id)
+	status, exitCode, pid, childPid := a.processManager.GetStatus(id)
+	var ports []string
+	if status == "running" {
+		ports = a.processManager.GetPorts(id)
+	}
 	return models.ScriptStatusDTO{
 		ID:       id,
 		Status:   status,
 		ExitCode: exitCode,
 		PID:      pid,
+		ChildPID: childPid,
+		Ports:    ports,
 	}
+}
+
+func (a *App) RefreshScriptPorts(id uint) []string {
+	return a.processManager.GetPorts(id)
 }
 
 func (a *App) GetScriptLogs(id uint) []models.LogLineDTO {
@@ -527,4 +538,124 @@ func (a *App) GetScriptLogs(id uint) []models.LogLineDTO {
 func (a *App) ClearScriptLogs(id uint) error {
 	a.processManager.ClearLogs(id)
 	return nil
+}
+
+// BatchStartResult 批量启动结果
+type BatchStartResult struct {
+	StartedIDs []uint             `json:"startedIds"`
+	Failed     []BatchStartFailure `json:"failed"`
+}
+
+// BatchStartFailure 单个脚本启动失败信息
+type BatchStartFailure struct {
+	Name  string `json:"name"`
+	Error string `json:"error"`
+}
+
+func (a *App) StartProjectScripts(projectID uint) (*BatchStartResult, error) {
+	var scripts []models.Script
+	database.DB.Where("project_id = ?", projectID).Find(&scripts)
+
+	if len(scripts) == 0 {
+		return nil, errors.New("该项目下没有脚本，无法一键启动")
+	}
+
+	var started []uint
+	var failed []BatchStartFailure
+
+	for _, s := range scripts {
+		err := a.processManager.Start(s.ID, s.Command, s.WorkDir, s.EnvVars, s.Elevated, s.KeepWindow)
+		if err != nil {
+			failed = append(failed, BatchStartFailure{Name: s.Name, Error: err.Error()})
+		} else {
+			started = append(started, s.ID)
+		}
+	}
+
+	if len(failed) > 0 && len(started) == 0 {
+		names := make([]string, len(failed))
+		for i, f := range failed {
+			names[i] = f.Name
+		}
+		return nil, fmt.Errorf("所有脚本启动失败: %s", strings.Join(names, ", "))
+	}
+
+	return &BatchStartResult{
+		StartedIDs: started,
+		Failed:     failed,
+	}, nil
+}
+
+// BatchStopResult 批量停止结果
+type BatchStopResult struct {
+	StoppedIDs []uint             `json:"stoppedIds"`
+	Failed     []BatchStartFailure `json:"failed"`
+}
+
+func (a *App) StopProjectScripts(projectID uint) (*BatchStopResult, error) {
+	var scripts []models.Script
+	database.DB.Where("project_id = ?", projectID).Find(&scripts)
+
+	if len(scripts) == 0 {
+		return nil, errors.New("该项目下没有脚本，无法一键关闭")
+	}
+
+	var stopped []uint
+	var failed []BatchStartFailure
+
+	for _, s := range scripts {
+		err := a.processManager.Stop(s.ID)
+		if err != nil {
+			failed = append(failed, BatchStartFailure{Name: s.Name, Error: err.Error()})
+		} else {
+			stopped = append(stopped, s.ID)
+		}
+	}
+
+	if len(failed) > 0 && len(stopped) == 0 {
+		names := make([]string, len(failed))
+		for i, f := range failed {
+			names[i] = f.Name
+		}
+		return nil, fmt.Errorf("所有脚本停止失败: %s", strings.Join(names, ", "))
+	}
+
+	return &BatchStopResult{
+		StoppedIDs: stopped,
+		Failed:     failed,
+	}, nil
+}
+
+func (a *App) RestartProjectScripts(projectID uint) (*BatchStartResult, error) {
+	var scripts []models.Script
+	database.DB.Where("project_id = ?", projectID).Find(&scripts)
+
+	if len(scripts) == 0 {
+		return nil, errors.New("该项目下没有脚本，无法一键重启")
+	}
+
+	var restarted []uint
+	var failed []BatchStartFailure
+
+	for _, s := range scripts {
+		err := a.processManager.Restart(s.ID, s.Command, s.WorkDir, s.EnvVars, s.Elevated, s.KeepWindow)
+		if err != nil {
+			failed = append(failed, BatchStartFailure{Name: s.Name, Error: err.Error()})
+		} else {
+			restarted = append(restarted, s.ID)
+		}
+	}
+
+	if len(failed) > 0 && len(restarted) == 0 {
+		names := make([]string, len(failed))
+		for i, f := range failed {
+			names[i] = f.Name
+		}
+		return nil, fmt.Errorf("所有脚本重启失败: %s", strings.Join(names, ", "))
+	}
+
+	return &BatchStartResult{
+		StartedIDs: restarted,
+		Failed:     failed,
+	}, nil
 }

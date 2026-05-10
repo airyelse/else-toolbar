@@ -34,6 +34,7 @@ type processStatus struct {
 	status   string
 	exitCode int
 	pid      int
+	childPid int // 实际子进程 PID（如 node/python），0 表示未知
 }
 
 // LogEntry 日志条目
@@ -93,7 +94,7 @@ func (m *Manager) Start(scriptID uint, command string, workDir string, envVarsJS
 		m.processes[scriptID] = &ManagedProcess{Cancel: cancel, Elevated: true, PID: pid, Handle: handle}
 		m.statuses[scriptID] = processStatus{status: "running", exitCode: 0, pid: pid}
 		m.mu.Unlock()
-		m.emitStatus(scriptID, "running", 0, pid)
+		m.emitStatus(scriptID, "running", 0, pid, 0)
 		go m.waitForElevatedExit(scriptID, handle)
 		return nil
 	}
@@ -172,8 +173,11 @@ func (m *Manager) Start(scriptID uint, command string, workDir string, envVarsJS
 	m.statuses[scriptID] = processStatus{status: "running", exitCode: 0, pid: cmd.Process.Pid}
 	m.mu.Unlock()
 
-	// 发送状态变更事件
-	m.emitStatus(scriptID, "running", 0, cmd.Process.Pid)
+	// 发送状态变更事件（childPid 暂为 0，后台探测）
+	m.emitStatus(scriptID, "running", 0, cmd.Process.Pid, 0)
+
+	// 后台异步探测子进程 PID
+	go m.detectChildPid(scriptID, cmd.Process.Pid)
 
 	// 读取 stdout
 	go m.readStream(scriptID, stdoutPipe, "stdout")
@@ -211,7 +215,7 @@ func (m *Manager) Start(scriptID uint, command string, workDir string, envVarsJS
 		}
 		if current.status != "stopped" {
 			m.addLog(scriptID, LogEntry{Text: logText, Source: "system", Timestamp: time.Now().Format("15:04:05")})
-			m.emitStatus(scriptID, status, exitCode, 0)
+			m.emitStatus(scriptID, status, exitCode, 0, 0)
 		}
 	}()
 
@@ -242,7 +246,7 @@ func (m *Manager) Stop(scriptID uint) error {
 			Source:    "system",
 			Timestamp: time.Now().Format("15:04:05"),
 		})
-		m.emitStatus(scriptID, "stopped", 0, 0)
+		m.emitStatus(scriptID, "stopped", 0, 0, 0)
 		return nil
 	}
 
@@ -269,7 +273,7 @@ func (m *Manager) Stop(scriptID uint) error {
 		Timestamp: time.Now().Format("15:04:05"),
 	})
 
-	m.emitStatus(scriptID, "stopped", 0, 0)
+	m.emitStatus(scriptID, "stopped", 0, 0, 0)
 	return nil
 }
 
@@ -284,17 +288,18 @@ func (m *Manager) Restart(scriptID uint, command string, workDir string, envVars
 }
 
 // GetStatus 获取进程状态
-func (m *Manager) GetStatus(scriptID uint) (status string, exitCode int, pid int) {
+func (m *Manager) GetStatus(scriptID uint) (status string, exitCode int, pid int, childPid int) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if p, ok := m.processes[scriptID]; ok {
-		return "running", 0, p.PID
+		s := m.statuses[scriptID]
+		return "running", 0, p.PID, s.childPid
 	}
 	if s, ok := m.statuses[scriptID]; ok {
-		return s.status, s.exitCode, s.pid
+		return s.status, s.exitCode, s.pid, s.childPid
 	}
-	return "stopped", 0, 0
+	return "stopped", 0, 0, 0
 }
 
 // GetLogs 获取日志（返回副本）
@@ -326,6 +331,221 @@ func (m *Manager) IsRunning(scriptID uint) bool {
 	defer m.mu.RUnlock()
 	_, ok := m.processes[scriptID]
 	return ok
+}
+
+// detectChildPid 异步探测 root PID 的直接子进程 PID 并更新状态
+func (m *Manager) detectChildPid(scriptID uint, rootPID int) {
+	// 等待一小段时间让子进程启动
+	time.Sleep(800 * time.Millisecond)
+
+	// 检查进程是否仍在运行
+	m.mu.RLock()
+	_, ok := m.processes[scriptID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	// 用 wmic 获取 rootPID 的直接子进程
+	cmd := exec.Command("wmic", "process", "get", "ParentProcessId,ProcessId", "/format:csv")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	childPIDs := parseDirectChildren(string(out), rootPID)
+	if len(childPIDs) == 0 {
+		return
+	}
+
+	// 取第一个子进程作为代表性 childPid
+	child := childPIDs[0]
+
+	m.mu.Lock()
+	// 再次确认进程仍在运行且 PID 匹配
+	p, ok := m.processes[scriptID]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	if p.PID != rootPID {
+		m.mu.Unlock()
+		return
+	}
+	s := m.statuses[scriptID]
+	if s.status != "running" {
+		m.mu.Unlock()
+		return
+	}
+	m.statuses[scriptID] = processStatus{
+		status:   s.status,
+		exitCode: s.exitCode,
+		pid:      s.pid,
+		childPid: child,
+	}
+	m.mu.Unlock()
+
+	m.emitStatus(scriptID, "running", 0, rootPID, child)
+}
+
+// parseDirectChildren 从 wmic 输出中解析指定 parentPID 的直接子进程
+func parseDirectChildren(output string, parentPID int) []int {
+	var children []int
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Node") || !strings.HasPrefix(line, ",") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 3 {
+			continue
+		}
+		ppid := atoiSafe(strings.TrimSpace(parts[1]))
+		cpid := atoiSafe(strings.TrimSpace(parts[2]))
+		if ppid == parentPID && cpid > 0 {
+			children = append(children, cpid)
+		}
+	}
+	return children
+}
+
+// GetPorts 获取指定脚本进程及其后代进程监听的端口
+func (m *Manager) GetPorts(scriptID uint) []string {
+	m.mu.RLock()
+	p, ok := m.processes[scriptID]
+	m.mu.RUnlock()
+
+	if !ok || p.PID <= 0 {
+		return nil
+	}
+
+	// 收集该脚本进程及其所有后代进程的 PID
+	pids := collectDescendantPIDs(p.PID)
+	if len(pids) == 0 {
+		return nil
+	}
+
+	// 用 netstat 获取所有 LISTENING 端口
+	ports := findListeningPorts(pids)
+	return ports
+}
+
+// collectDescendantPIDs 收集 rootPID 及其所有后代进程 PID
+func collectDescendantPIDs(rootPID int) []int {
+	// 使用 wmic 递归获取进程树: wmic process get ParentProcessId,ProcessId
+	cmd := exec.Command("wmic", "process", "get", "ParentProcessId,ProcessId", "/format:csv")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.Output()
+	if err != nil {
+		// fallback: 至少返回 rootPID 自己
+		return []int{rootPID}
+	}
+
+	// 解析输出构建 parent->children 映射
+	parentChildren := make(map[int][]int)
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Node") || strings.HasPrefix(line, ",") == false {
+			continue
+		}
+		// CSV 格式: ,ParentProcessId,ProcessId
+		parts := strings.Split(line, ",")
+		if len(parts) < 3 {
+			continue
+		}
+		parentStr := strings.TrimSpace(parts[1])
+		childStr := strings.TrimSpace(parts[2])
+		parentID := atoiSafe(parentStr)
+		childID := atoiSafe(childStr)
+		if parentID > 0 && childID > 0 {
+			parentChildren[parentID] = append(parentChildren[parentID], childID)
+		}
+	}
+
+	// BFS 收集所有后代
+	seen := map[int]bool{rootPID: true}
+	queue := []int{rootPID}
+	var result []int
+
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		result = append(result, cur)
+		for _, child := range parentChildren[cur] {
+			if !seen[child] {
+				seen[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+
+	return result
+}
+
+// findListeningPorts 查找属于给定 PID 集合的 LISTENING 端口
+func findListeningPorts(pids []int) []string {
+	pidSet := make(map[int]bool, len(pids))
+	for _, pid := range pids {
+		pidSet[pid] = true
+	}
+
+	// netstat -aon -p TCP 获取所有 TCP 连接
+	cmd := exec.Command("cmd", "/C", "netstat -aon -p TCP")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var ports []string
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		// LISTENING 行格式:  TCP    0.0.0.0:3000    0.0.0.0:0    LISTENING    1234
+		if !strings.Contains(line, "LISTENING") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+
+		// fields[4] 是 PID
+		pid := atoiSafe(fields[4])
+		if !pidSet[pid] {
+			continue
+		}
+
+		// fields[1] 是本地地址，如 0.0.0.0:3000 或 [::]:3000
+		localAddr := fields[1]
+		colonIdx := strings.LastIndex(localAddr, ":")
+		if colonIdx < 0 {
+			continue
+		}
+		port := localAddr[colonIdx+1:]
+		if port != "" && !seen[port] {
+			seen[port] = true
+			ports = append(ports, port)
+		}
+	}
+
+	return ports
+}
+
+func atoiSafe(s string) int {
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			break
+		}
+	}
+	return n
 }
 
 // readStream 读取进程输出流
@@ -382,13 +602,14 @@ func (m *Manager) addLog(scriptID uint, entry LogEntry) {
 }
 
 // emitStatus 发送状态变更事件
-func (m *Manager) emitStatus(scriptID uint, status string, exitCode int, pid int) {
+func (m *Manager) emitStatus(scriptID uint, status string, exitCode int, pid int, childPid int) {
 	if m.emit != nil {
 		m.emit("script:status", map[string]any{
 			"id":       scriptID,
 			"status":   status,
 			"exitCode": exitCode,
 			"pid":      pid,
+			"childPid": childPid,
 		})
 	}
 }
@@ -471,7 +692,7 @@ func (m *Manager) waitForElevatedExit(scriptID uint, handle windows.Handle) {
 	m.mu.Unlock()
 	if ok && current.Handle == handle && status.status != "stopped" {
 		m.addLog(scriptID, LogEntry{Text: "[系统] 管理员脚本已正常退出。", Source: "system", Timestamp: time.Now().Format("15:04:05")})
-		m.emitStatus(scriptID, "exited", 0, 0)
+		m.emitStatus(scriptID, "exited", 0, 0, 0)
 	}
 }
 

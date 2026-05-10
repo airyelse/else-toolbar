@@ -50,10 +50,12 @@ type ScriptDTO struct {
 
 // ScriptStatusDTO 进程状态传输对象
 type ScriptStatusDTO struct {
-	ID       uint   `json:"id"`
-	Status   string `json:"status"`   // running, stopped, exited
-	ExitCode int    `json:"exitCode"` // 退出码（仅 exited 状态有值）
-	PID      int    `json:"pid"`      // 进程 PID
+	ID       uint     `json:"id"`
+	Status   string   `json:"status"`   // running, stopped, exited
+	ExitCode int      `json:"exitCode"` // 退出码（仅 exited 状态有值）
+	PID      int      `json:"pid"`      // 进程 PID（root，通常是 cmd）
+	ChildPID int      `json:"childPid"` // 实际子进程 PID（如 node/python），0 表示未知
+	Ports    []string `json:"ports"`    // 监听端口列表，如 ["3000", "8080"]
 }
 
 // LogLineDTO 日志行传输对象

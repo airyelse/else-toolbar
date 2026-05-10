@@ -15,6 +15,9 @@ import {
   Monitor,
   FolderOpened,
   Bottom,
+  CaretRight,
+  Connection,
+  Refresh,
 } from '@element-plus/icons-vue'
 import {
   projectList,
@@ -57,8 +60,15 @@ import {
   scriptStatusLabel,
   handleScriptBrowseFile,
   handleScriptBrowseDir,
+  handleStartProjectScripts,
+  handleStopProjectScripts,
+  handleRestartProjectScripts,
+  handleToggleProjectScripts,
+  isProjectRunning,
   setupEventListeners,
   teardownEventListeners,
+  handleRefreshPorts,
+  openPortUrl,
 } from '../composables/useScriptConsole'
 
 onMounted(async () => {
@@ -106,6 +116,11 @@ onUnmounted(() => {
             <el-icon size="14" style="color: var(--primary)"><Folder /></el-icon>
             <span class="sidebar-label">{{ proj.name }}</span>
             <span class="sidebar-count">{{ proj.scriptCount }}</span>
+            <el-icon v-if="proj.scriptCount > 0" size="12" class="tag-toggle" :title="isProjectRunning(proj.id) ? '一键关闭' : '一键启动'" @click.stop="handleToggleProjectScripts(proj.id)">
+              <VideoPause v-if="isProjectRunning(proj.id)" style="color: var(--danger)" />
+              <CaretRight v-else style="color: var(--success)" />
+            </el-icon>
+            <el-icon v-if="proj.scriptCount > 0" size="12" class="tag-restart" title="一键重启" @click.stop="handleRestartProjectScripts(proj.id)"><RefreshRight /></el-icon>
             <el-icon size="12" class="tag-edit" @click.stop="openEditProject(proj)"><Edit /></el-icon>
             <el-icon size="12" class="tag-delete" @click.stop="handleDeleteProject(proj)"><Delete /></el-icon>
           </div>
@@ -164,14 +179,30 @@ onUnmounted(() => {
                 {{ scriptStatusLabel(scriptStatuses[item.id]).text }}
               </el-tag>
               <el-tag v-else type="info" size="small" effect="light">已停止</el-tag>
-              <span v-if="scriptStatuses[item.id]?.pid" class="console-script-pid">PID: {{ scriptStatuses[item.id].pid }}</span>
             </div>
           </div>
-          <div class="console-script-meta" v-if="item.workDir || item.notes">
+          <div class="console-script-meta" v-if="item.workDir || item.notes || scriptStatuses[item.id]?.pid || (scriptStatuses[item.id]?.ports?.length)">
             <span v-if="item.workDir" class="console-script-workdir" :title="item.workDir">
               <el-icon size="12"><Folder /></el-icon>{{ item.workDir }}
             </span>
+            <span v-if="scriptStatuses[item.id]?.pid" class="console-script-pid-inline" :title="`Root PID: ${scriptStatuses[item.id].pid}`">
+              <el-icon size="12"><Cpu /></el-icon>PID {{ scriptStatuses[item.id].pid }}
+            </span>
+            <span v-if="scriptStatuses[item.id]?.childPid" class="console-script-pid-inline console-script-childpid" :title="`Child PID: ${scriptStatuses[item.id].childPid}`">
+              <el-icon size="12"><Cpu /></el-icon>Child {{ scriptStatuses[item.id].childPid }}
+            </span>
             <span v-if="item.notes" class="console-script-notes">{{ item.notes }}</span>
+            <span v-if="scriptStatuses[item.id]?.ports?.length" class="console-script-ports">
+              <el-icon size="12"><Connection /></el-icon>
+              <a
+                v-for="port in scriptStatuses[item.id].ports"
+                :key="port"
+                class="console-script-port-link"
+                href="#"
+                @click.prevent="openPortUrl(port)"
+                :title="`在浏览器中打开 localhost:${port}`"
+              >:{{ port }}</a>
+            </span>
           </div>
           <div class="console-script-actions">
             <el-button
@@ -206,6 +237,16 @@ onUnmounted(() => {
               <el-icon><RefreshRight /></el-icon><span>重启</span>
             </el-button>
             <span v-if="item.elevated && scriptStatuses[item.id]?.status === 'running'" class="action-hint">管理员脚本请在外部窗口手动关闭</span>
+            <el-button
+              v-if="scriptStatuses[item.id]?.status === 'running'"
+              text
+              size="small"
+              @click="handleRefreshPorts(item.id)"
+              class="action-btn"
+              title="刷新端口"
+            >
+              <el-icon><Refresh /></el-icon><span>端口</span>
+            </el-button>
             <el-button text size="small" @click="openScriptLog(item)" class="action-btn action-primary">
               <el-icon><Document /></el-icon><span>日志</span>
             </el-button>
@@ -430,7 +471,7 @@ onUnmounted(() => {
 
 /* ===== Sidebar ===== */
 .sidebar {
-  width: 240px;
+  width: 300px;
   flex-shrink: 0;
   background: var(--bg-card);
   border-right: 1px solid var(--border);
@@ -512,14 +553,22 @@ onUnmounted(() => {
 
 /* Tag actions */
 .tag-edit,
-.tag-delete {
+.tag-delete,
+.tag-toggle,
+.tag-restart {
   display: none;
   color: var(--text-muted);
 }
 
 .sidebar-item:hover .tag-edit,
-.sidebar-item:hover .tag-delete {
+.sidebar-item:hover .tag-delete,
+.sidebar-item:hover .tag-toggle,
+.sidebar-item:hover .tag-restart {
   display: block;
+}
+
+.tag-restart:hover {
+  color: var(--primary) !important;
 }
 
 .tag-delete:hover {
@@ -574,11 +623,11 @@ onUnmounted(() => {
   background: var(--bg-card);
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  padding: 16px;
+  padding: 10px;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .console-script-card:hover {
@@ -594,13 +643,13 @@ onUnmounted(() => {
 .console-script-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .console-script-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -627,13 +676,13 @@ onUnmounted(() => {
 }
 
 .console-script-name {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
 }
 
 .console-script-cmd {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-secondary);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   white-space: nowrap;
@@ -645,7 +694,7 @@ onUnmounted(() => {
 .console-script-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -655,16 +704,33 @@ onUnmounted(() => {
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 }
 
+.console-script-pid-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+.console-script-childpid {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+
 .console-script-meta {
   display: flex;
-  gap: 12px;
+  gap: 6px;
   align-items: center;
-  padding-left: 50px;
+  padding-left: 38px;
   flex-wrap: wrap;
 }
 
 .console-script-workdir {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
@@ -676,18 +742,40 @@ onUnmounted(() => {
 }
 
 .console-script-notes {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-muted);
   font-style: italic;
+}
+
+.console-script-ports {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.console-script-port-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 10px;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: all 0.15s;
 }
 
 .console-script-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding-top: 8px;
+  gap: 0;
+  padding-top: 4px;
   border-top: 1px solid var(--border);
   margin-top: auto;
+}
+
+.console-script-actions :deep(.el-button) {
+  padding-inline: 6px;
 }
 
 /* ===== Actions ===== */
