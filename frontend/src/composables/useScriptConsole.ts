@@ -17,6 +17,7 @@ import {
   GetScriptLogs,
   ClearScriptLogs,
   SelectDirectory as SelectDirDialog,
+  SelectScriptFile,
 } from '../../bindings/else-toolbox/app'
 
 // ==================== Types ====================
@@ -626,6 +627,32 @@ export async function handleScriptBrowseDir() {
   try {
     const dir = await SelectDirDialog()
     if (dir) scriptForm.value.workDir = dir
+  } catch { /* ignore */ }
+}
+
+function quoteShellPath(path: string) {
+  return /\s/.test(path) ? `"${path}"` : path
+}
+
+export async function handleScriptBrowseFile() {
+  try {
+    const file = await SelectScriptFile()
+    if (!file) return
+
+    scriptForm.value.command = quoteShellPath(file)
+
+    if (!scriptForm.value.workDir.trim()) {
+      const normalized = file.replace(/\\/g, '/')
+      const lastSlash = normalized.lastIndexOf('/')
+      if (lastSlash > 0) {
+        scriptForm.value.workDir = file.slice(0, lastSlash).replace(/\//g, '\\')
+      }
+    }
+
+    if (!scriptForm.value.name.trim()) {
+      const filename = file.split(/[/\\]/).pop() || ''
+      scriptForm.value.name = filename.replace(/\.[^.]+$/, '')
+    }
   } catch { /* ignore */ }
 }
 

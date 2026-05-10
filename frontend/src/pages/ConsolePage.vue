@@ -55,6 +55,7 @@ import {
   handleLogScroll,
   openLogUrl,
   scriptStatusLabel,
+  handleScriptBrowseFile,
   handleScriptBrowseDir,
   setupEventListeners,
   teardownEventListeners,
@@ -264,12 +265,18 @@ onUnmounted(() => {
         <el-input v-model="scriptForm.name" placeholder="如：Dev Server" size="large" @keyup.enter="handleSaveScript" />
       </el-form-item>
       <el-form-item label="命令" required>
-        <el-input
-          v-model="scriptForm.command"
-          type="textarea"
-          :autosize="{ minRows: 2, maxRows: 6 }"
-          placeholder="完整命令行，如：node server.js 或 python -m http.server 8000"
-        />
+        <div class="config-dir-row script-command-row">
+          <el-input
+            v-model="scriptForm.command"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 6 }"
+            placeholder="完整命令行，如：node server.js 或 python -m http.server 8000"
+          />
+          <el-button size="large" @click="handleScriptBrowseFile" title="选择脚本文件">
+            <el-icon><Document /></el-icon>
+          </el-button>
+        </div>
+        <div class="form-hint">可直接选择脚本文件；选中后会自动填入命令</div>
       </el-form-item>
       <el-form-item label="所属项目">
         <el-select v-model="scriptForm.projectId" placeholder="无（未分类）" clearable size="large" style="width: 100%">

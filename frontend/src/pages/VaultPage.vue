@@ -831,7 +831,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, var(--bg) 0%, var(--primary-bg) 100%);
+  background: var(--bg);
 }
 
 .locked-card { text-align: center; padding: 48px; }

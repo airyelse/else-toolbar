@@ -248,6 +248,17 @@ func (a *App) SelectDirectory() (string, error) {
 		PromptForSingleSelection()
 }
 
+func (a *App) SelectScriptFile() (string, error) {
+	if a.app == nil {
+		return "", errors.New("application 未初始化")
+	}
+	return a.app.Dialog.OpenFile().
+		SetTitle("选择脚本文件").
+		CanChooseDirectories(false).
+		CanChooseFiles(true).
+		PromptForSingleSelection()
+}
+
 // ==================== OpenCode Main Config ====================
 
 func (a *App) ReadMainConfig() (*opencode.MainConfig, error) {

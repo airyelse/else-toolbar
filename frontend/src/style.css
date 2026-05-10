@@ -143,7 +143,7 @@ html.amoled {
 
   /* Surface — 纯黑骨架 */
   --bg: #000000;
-  --bg-card: #0c0c0c;
+  --bg-card: #000000;
   --bg-surface: #000000;
   --bg-hover: rgba(163, 163, 163, 0.08);
   --border: #1e1e1e;
@@ -162,8 +162,8 @@ html.amoled {
   --shadow-lg: none;
 
   /* Element Plus */
-  --el-bg-color: #0c0c0c;
-  --el-bg-color-overlay: #101010;
+  --el-bg-color: #000000;
+  --el-bg-color-overlay: #000000;
   --el-bg-color-page: #000000;
   --el-text-color-primary: #ebebeb;
   --el-text-color-regular: #d4d4d4;
@@ -172,13 +172,13 @@ html.amoled {
   --el-border-color: #1e1e1e;
   --el-border-color-light: #171717;
   --el-border-color-lighter: #121212;
-  --el-fill-color: #161616;
-  --el-fill-color-light: #101010;
-  --el-fill-color-lighter: #0a0a0a;
-  --el-fill-color-blank: #0c0c0c;
+  --el-fill-color: #000000;
+  --el-fill-color-light: #000000;
+  --el-fill-color-lighter: #000000;
+  --el-fill-color-blank: #000000;
   --el-mask-color: rgba(0, 0, 0, 0.75);
-  --el-dialog-bg-color: #101010;
-  --el-card-bg-color: #0c0c0c;
+  --el-dialog-bg-color: #000000;
+  --el-card-bg-color: #000000;
 }
 
 * {

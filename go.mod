@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/glebarez/sqlite v1.11.0
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.82
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.86
 	golang.org/x/crypto v0.49.0
 	golang.org/x/sys v0.42.0
 	gorm.io/gorm v1.31.1
@@ -49,7 +49,7 @@ require (
 	github.com/samber/lo v1.52.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.2 // indirect
-	github.com/wailsapp/go-webview2 v1.0.23 // indirect
+	github.com/wailsapp/wails/webview2 v1.0.24 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.51.0 // indirect
